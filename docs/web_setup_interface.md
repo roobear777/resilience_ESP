@@ -1,0 +1,8 @@
+- setup button enables temporary WiFi hotspot
+- hotspot name
+- page address: 192.168.4.1
+- live sliders update LEDs immediately
+- Save Settings stores values permanently
+- Exit Setup Mode turns hotspot off
+- Restore Defaults / Reboot / LIVE-SIMULATION are deliberate admin buttons
+- web page is for setup/tuning only, not required for normal running
