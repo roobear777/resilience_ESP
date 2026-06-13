@@ -75,6 +75,7 @@ const unsigned long SERIAL_DEBUG_INTERVAL_MS = 100;
 // OLED refresh should be slower than the main loop.
 // This keeps display updates lightweight.
 const unsigned long OLED_UPDATE_INTERVAL_MS = 250;
+const unsigned long OLED_SETUP_PAGE_INTERVAL_MS = 4000;
 
 // India-safe simulated Output Expander diagnostics over USB Serial only.
 // This does not start Serial1 or send Pixelblaze Output Expander frames.
@@ -148,8 +149,8 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
 //
 
 // OLED is assigned to GPIO1/GPIO2.
-// Future LED Output Expander UART pins are not assigned yet.
-// First candidate pool for future LED UART/diagnostics: GPIO39, GPIO40, GPIO41.
+// Future LED Output Expander UART TX is planned for GPIO39.
+// Real Output Expander output remains disabled unless explicitly enabled for hardware validation.
 
 const int BUTTON_PINS[NUM_BUTTONS] = {
   4,  // Button 1
@@ -594,6 +595,19 @@ void updateOled() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
+  if (!hasAnyActiveInput() && !hasAnyActiveFireOutput() && shouldShowOledSetupPage(now)) {
+    drawOledSetupPage();
+    display.display();
+    return;
+  }
+
+  drawOledControllerPage();
+  display.display();
+#endif
+}
+
+#if ENABLE_OLED_HARDWARE
+void drawOledControllerPage() {
   drawOledLine(0, FIRE_OUTPUTS_ENABLED ? "GPIO OUT ON" : "GPIO OUT OFF");
   drawOledLine(1, getOledStatusLabel());
 
@@ -616,12 +630,15 @@ void updateOled() {
   } else {
     drawOledLine(5, "GPIO output: OFF");
   }
-
-  display.display();
-#endif
 }
 
-#if ENABLE_OLED_HARDWARE
+void drawOledSetupPage() {
+  drawOledLine(0, "SETUP");
+  drawOledLine(1, getLedUartDisplayLabel());
+  drawOledLine(2, getLedUartTxDisplayLabel());
+  drawOledLine(3, getRealLedDisplayLabel());
+}
+
 void drawOledLine(int lineNumber, const String &text) {
   const int lineHeight = 10;
   display.setCursor(0, lineNumber * lineHeight);
@@ -650,6 +667,39 @@ String getOledStatusLabel() {
   }
 
   return "READY";
+}
+
+bool shouldShowOledSetupPage(unsigned long now) {
+  return ((now / OLED_SETUP_PAGE_INTERVAL_MS) % 2) == 1;
+}
+
+String getLedUartDisplayLabel() {
+  if (!ledExpanderOutputRealOutputAllowed()) {
+    return "LED UART OFF";
+  }
+
+  if (ledExpanderOutputRealOutputStarted()) {
+    return "LED UART ON";
+  }
+
+  return "LED UART WAIT";
+}
+
+String getLedUartTxDisplayLabel() {
+  String label = "TX GPIO";
+  label += String(ledExpanderOutputPlannedTxPin());
+  label += " ";
+  label += String(ledExpanderOutputPlannedBaudRate() / 1000000);
+  label += "M";
+  return label;
+}
+
+String getRealLedDisplayLabel() {
+  if (ledExpanderOutputRealOutputAllowed() && ledExpanderOutputRealOutputStarted()) {
+    return "Verify LEDs";
+  }
+
+  return "Real LEDs OFF";
 }
 
 String getInputDisplayLabel() {
