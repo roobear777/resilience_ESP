@@ -28,8 +28,8 @@ FIRE1-FIRE8 trigger 500 ms one-shot pulses
 holding a button does not keep an output firing
 releasing and pressing again triggers another 500 ms pulse
 Button 1 + Button 8 triggers FIRE9 / big poof
-simulation mode keeps physical FIRE pins inactive
-live mode activates physical FIRE pins only during valid pulses
+current firmware has FIRE_OUTPUTS_ENABLED = true
+FIRE pins should only activate during valid pulses or the guarded Big Poof hold window
 FIRE outputs use active-LOW relay logic
 FIRE outputs initialize HIGH
 FIRE outputs pulse LOW when triggered
@@ -119,7 +119,7 @@ Stage 1: Compile test
 Stage 2: Serial-only firmware test
 Stage 3: OLED display test
 Stage 4: Breadboard input test
-Stage 5: Simulation-mode output logic test
+Stage 5: Safe output logic test
 Stage 6: One-shot pulse test
 Stage 7: Big poof logic test
 Stage 8: Live output pin test with safe indicators
@@ -166,7 +166,7 @@ Firmware compiles successfully.
 
 If OLED hardware is not connected yet, keep OLED hardware disabled in firmware.
 
-If LED Output Expander hardware is not connected yet, keep LED hardware output disabled or simulated.
+If LED Output Expander hardware is not connected yet, keep real LED hardware output disabled or simulated.
 
 ## 5. Stage 2: Serial-Only Firmware Test
 
@@ -185,26 +185,25 @@ baud rate 115200
 no external fire hardware connected
 no relay hardware connected
 no LED strip hardware connected
-simulation mode enabled
+real Output Expander output disabled unless a California validation build deliberately allows it
 ```
 
 Expected startup output should confirm:
 
 ```text
 controller started
-mode is SIMULATION
 OLED enabled or disabled state
 input pull-down mode
 FIRE output idle level is HIGH
 FIRE output trigger level is LOW
-LED output mode is disabled, simulated, or expander test mode
+LED runtime output mode starts OFF
 ```
 
 Expected result:
 
 ```text
 ESP32 repeatedly prints button and fire state diagnostics.
-No FIRE output pins should trigger in simulation mode.
+With FIRE_OUTPUTS_ENABLED = true, FIRE pins are real active-LOW outputs and should remain idle HIGH until a valid trigger.
 No LED hardware output is required at this stage.
 ```
 
@@ -223,55 +222,52 @@ OLED connected to ESP32 I2C pins
 OLED hardware enabled in firmware
 SSD1306 library installed
 Adafruit GFX library installed
-simulation mode enabled
+current firmware loaded
 ```
 
-Expected idle simulator screen:
+Expected controller page while inputs/fire are active:
 
 ```text
-SIMULATOR MODE
-
 READY
 Input: -
 Output: OFF
 LED: -
-No live output
 ```
 
-Expected simulator firing screen for Input 4:
+Expected firing screen for Input 4:
 
 ```text
-SIMULATOR MODE
-
 FIRING
 Input: 4
 Output: 4
 LED: 4
-No live output
 ```
 
 Expected pulse-complete screen if Input 4 is still held after the 500 ms pulse:
 
 ```text
-SIMULATOR MODE
-
 PULSE COMPLETE
 Input: 4
 Output: OFF
 LED: 4
-No live output
 ```
 
 Expected big-poof screen:
 
 ```text
-SIMULATOR MODE
-
 BIG POOF
 Input: 1+8
 Output: 1 8 9
 LED: BIG
-No live output
+```
+
+When idle, the OLED may rotate to the setup page:
+
+```text
+SETUP
+LED UART OFF
+TX GPIO39 2M
+Real LEDs OFF
 ```
 
 The OLED should not permanently show:
@@ -305,7 +301,6 @@ Confirm each input is read correctly by the ESP32.
 Setup for India bench testing:
 
 ```text
-simulation mode enabled
 internal pull-down mode enabled
 simple button or jumper from ESP32 3.3V to each input pin
 no relay hardware required
@@ -355,21 +350,22 @@ All 8 inputs read HIGH when pressed or connected to 3.3V.
 Each input maps to the correct logical button number.
 ```
 
-## 8. Stage 5: Simulation-Mode Output Logic Test
+## 8. Stage 5: Safe Output Logic Test
 
 Purpose:
 
 ```text
-Confirm firmware output logic without activating physical FIRE pins.
+Confirm firmware output logic with safe indicators before any relay, solenoid, or live fire hardware is connected.
 ```
 
 Setup:
 
 ```text
-simulation mode enabled
+FIRE_OUTPUTS_ENABLED = true in current firmware
 no relay hardware connected
 no solenoids connected
 no live fire hardware connected
+use only Serial/OLED plus safe indicators if checking physical GPIO levels
 ```
 
 For each normal input:
@@ -385,23 +381,22 @@ Press Input 7 -> FIRE7
 Press Input 8 -> FIRE8
 ```
 
-Expected simulator behavior:
+Expected behavior:
 
 ```text
 OLED shows FIRING
 OLED shows matching Input number
 OLED shows matching Output number
 OLED shows matching LED number
-OLED shows No live output
 Serial shows the matching FIRE pulse state
-physical FIRE pins do not activate
+FIRE GPIO output for that trigger pulses active-LOW if physically monitored
 ```
 
 Pass condition:
 
 ```text
-Each input causes the correct simulated output selection.
-No physical FIRE pin activates in simulation mode.
+Each input causes the correct output selection.
+No unrequested FIRE pin activates.
 ```
 
 ## 9. Stage 6: One-Shot Pulse Test
@@ -485,8 +480,9 @@ Pass condition:
 
 ```text
 FIRE9 is triggered by the Button 1 + Button 8 combination.
-FIRE9 uses its own one-shot pulse timing.
-Holding the combo does not keep FIRE9 active.
+FIRE9 can remain active while Button 1 + Button 8 are held.
+FIRE9 turns off when either button is released.
+FIRE9 turns off after the 10-second Big Poof cutoff even if both buttons remain held.
 FIRE9 does not trigger from Button 1 alone.
 FIRE9 does not trigger from Button 8 alone.
 ```
@@ -496,7 +492,7 @@ FIRE9 does not trigger from Button 8 alone.
 Purpose:
 
 ```text
-Confirm live mode drives ESP32 FIRE output pins correctly.
+Confirm the current firmware drives ESP32 FIRE output pins correctly with safe indicators.
 ```
 
 Setup:
@@ -505,7 +501,7 @@ Setup:
 no solenoids connected
 no live fire hardware connected
 use LEDs, meter, oscilloscope, or safe relay test board only
-live mode enabled deliberately
+FIRE_OUTPUTS_ENABLED = true in current firmware
 ```
 
 For active-LOW LED testing, safe bench wiring is:
@@ -515,22 +511,13 @@ For active-LOW LED testing, safe bench wiring is:
 LED short leg -> ESP32 FIRE GPIO
 ```
 
-Expected live mode screen:
-
-```text
-LIVE MODE
-```
-
 For Input 4 during active pulse:
 
 ```text
-LIVE MODE
-
 FIRING
 Input: 4
 Output: 4
 LED: 4
-Live output: ON
 ```
 
 Expected behavior:
@@ -653,16 +640,17 @@ No FIRE output behavior changes during LED testing.
 Suggested first LED tests:
 
 ```text
-Zone 1 only
-Zone 2 only
-Zone 3 only
-Zone 4 only
-Zone 5 only
-Zone 6 only
-Zone 7 only
-Zone 8 only
-all zones low brightness
-all zones off
+led status
+led solid
+led ch 0
+led ch 1
+led ch 2
+led ch 3
+led ch 4
+led ch 5
+led ch 6
+led ch 7
+led off
 ```
 
 Pass condition:
@@ -695,8 +683,9 @@ Button 4 press -> LED zone 4 animation
 Button 5 press -> LED zone 5 animation
 Button 6 press -> LED zone 6 animation
 Button 7 press -> LED zone 7 animation
-Button 8 press -> LED zone 8 animation
-Button 1 + Button 8 -> BIG LED animation
+Button 8 press -> no independent LED zone for now
+Z8 station strings mirror/summarize Z1-Z7 active station state
+Button 1 + Button 8 -> FIRE9 / Big Poof; no separate BIG LED path unless explicitly added later
 ```
 
 Expected OLED wording should stay architecture-neutral:

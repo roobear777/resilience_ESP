@@ -81,7 +81,13 @@ When false:
 - `PBDriverAdapter::show()` is not called.
 - No Output Expander frames are sent.
 
-When California later validates hardware, enabling this guard is the deliberate step that allows UART output.
+When California later validates hardware, enabling this guard is the deliberate step that allows UART output. It does not by itself start UART output on boot. The runtime LED mode still boots as `LED_OUTPUT_OFF`.
+
+With the guard enabled, `started=1` should only be expected after a guarded runtime command starts real output, such as:
+
+- `led solid`
+- `led ch N`
+- `led animation`
 
 ## Output Expander Channel Mapping
 
@@ -195,7 +201,9 @@ When ready for a controlled test:
 
 - Change `ENABLE_REAL_PB_EXPANDER_OUTPUT` to `true`.
 - Upload.
-- Confirm Serial status changes to `allowed=1` and `started=1` if diagnostics expose it.
+- Confirm Serial status shows `allowed=1` after upload, while runtime LED mode still starts OFF.
+- Run a guarded runtime command such as `led solid`, `led ch N`, or `led animation`.
+- Confirm Serial status changes to `started=1` only after that command starts real output.
 - Start with a small safe LED/zone test if possible.
 - Validate red/green/blue colour order.
 - Validate Ch0..Ch7 physical zone order.

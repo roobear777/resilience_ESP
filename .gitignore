@@ -4,4 +4,5 @@
 build/
 dist/
 .cache/
+.vexp/
 validation_logs/

@@ -1,11 +1,13 @@
 # LED Animation Architecture
 
-Before we treat it as fully settled, remaining refinements include:
-actual timing sequence filled in
-Zone 4 count resolved or deliberately set to 300
-other zone pattern files reviewed
-animation presets named
-web interface settings matched to animation parameters
+The ESP32 now has a software-side logical render path for Z1-Z8 based on the
+Pixelblaze source structure. The remaining work is validation and tuning, not a
+fresh port of the zone render structure.
+
+Remaining validation caveats:
+- animation timing and feel still need visual validation
+- colour order still needs physical LED validation
+- real channel geometry still needs California Output Expander validation
 
 ## Rendering model
 - ESP32 owns animation logic.
