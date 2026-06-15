@@ -8,6 +8,28 @@ ESP32-S3 -> PBDriverAdapter -> Pixelblaze Output Expander -> LEDs
 
 It opens one gate at a time. If a step fails, stop and record what happened.
 
+## Prerequisites
+
+The guided validation script requires Python 3 and the `pyserial` package on the Mac running Terminal.
+
+Install `pyserial` once with:
+
+```sh
+python3 -m pip install pyserial
+```
+
+On macOS, seeing `Defaulting to user installation because normal site-packages is not writeable` is normal and is not an error.
+
+Do not use `sudo` unless someone deliberately knows why they need it.
+
+After installing, run the validation script again:
+
+```sh
+python3 tools/validate_led_expander.py
+```
+
+This Python package is only for the Mac script talking to the ESP32 over USB Serial. USB Serial uses `115200`; the Output Expander's real LED UART uses `2000000`.
+
 ## Quick Start
 
 1. Get the latest validation code.
@@ -41,12 +63,16 @@ python3 tools/validate_led_expander.py --port /dev/cu.usbserial-0001
 
 - California validation firmware has been uploaded.
 - ESP32 is connected over USB.
+- Arduino Serial Monitor and Serial Plotter are closed before running the guided script. Only one program can use the ESP32 USB Serial port at a time.
+- Target hardware is Zael's photographed ElectroMage Pixelblaze Output Expander v3.0 board.
 - Output Expander is powered correctly.
 - LED power is safe.
 - ESP32 GND is connected to Output Expander GND.
 - ESP32 GPIO39 is connected to Output Expander data/UART input.
 - GPIO39 is not connected to 5V.
 - Real LEDs are not expected to animate immediately on boot.
+
+Capacity note: use the current ElectroMage product page for this board as the capacity reference. It documents up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output. Tardi's largest planned channel is Ch3 at 400 pixels, so the planned channel lengths are within that documented capacity. Physical wiring, colour order, grounding, and real LED behaviour still need this California validation pass.
 
 ## Safety Model
 
@@ -56,6 +82,8 @@ python3 tools/validate_led_expander.py --port /dev/cu.usbserial-0001
 - Nothing should start animating just from power-up.
 - The Terminal script opens the next gate only after Zael confirms the previous one worked.
 - The ESP32 cannot automatically know whether the physical wiring is correct. Zael must visually confirm real LED behaviour.
+- In this guide, "LEDs" means the real LED strings connected to the Output Expander, not ESP32 onboard LEDs.
+- In firmware Serial diagnostics, `Outputs=ON` means FIRE outputs are enabled. It does not mean LED UART output is on.
 
 ## Step-by-Step Validation
 
@@ -64,11 +92,27 @@ python3 tools/validate_led_expander.py --port /dev/cu.usbserial-0001
 Expected:
 
 - ESP32 boots.
-- LEDs do not start animating unexpectedly.
 - OLED/Serial shows a sensible setup/status state.
 - `led status` reports mode OFF.
 
-The guided script sends/checks:
+The guided script first asks Zael to reset or power-cycle the ESP32 while the Output Expander is connected and the real LED strings are powered.
+
+India USB-only dry run:
+
+- if no Output Expander and no real LED strings are connected, answer `n` to the flicker question.
+
+Expected:
+
+- before the script sends any `led` command, no real sculpture LEDs flicker, flash, or animate.
+
+If any real sculpture LEDs flicker, flash, or animate:
+
+- stop
+- record which channels/zones flickered
+- do not continue to the solid test
+- send the validation log back to Roopert
+
+If there is no boot/reset flicker, the guided script sends/checks:
 
 ```text
 led status
@@ -179,6 +223,8 @@ Record:
 
 The guided script is preferred.
 
+Before running it, close Arduino Serial Monitor and Serial Plotter.
+
 Run:
 
 ```sh
@@ -198,6 +244,9 @@ The script:
 - does not edit source code
 - does not enable real output
 - sends existing `led ...` Serial commands
+- checks for boot/reset flicker before sending the first `led` command
+- keeps full raw Serial output in the saved log
+- shows a concise parsed summary in Terminal when possible
 - asks Zael what physically happened
 - stops when a gate fails
 - saves a log
@@ -206,6 +255,12 @@ Serial baud notes:
 
 - USB Serial guide baud: `115200`
 - Output Expander real LED UART baud: `2000000`
+
+## Advanced Optional Tool Check
+
+If a logic analyzer or oscilloscope is available, GPIO39 can be probed during ESP32 reset/power-cycle to look for unwanted activity before firmware setup takes over.
+
+This is optional. The main validation flow is still based on Zael visually checking whether real sculpture LED strings flicker, flash, or animate before the script sends any `led` command.
 
 ## Manual Serial Commands Fallback
 

@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 SCRIPT_NAME = "validate_led_expander.py"
-SCRIPT_VERSION = "1.0"
+SCRIPT_VERSION = "1.2"
 USB_SERIAL_BAUD = 115200
 LOG_DIR = Path("validation_logs")
 
@@ -62,7 +62,8 @@ def print_heading() -> None:
     print("This script does not upload firmware.")
     print("Zael must already have uploaded the California validation firmware.")
     print("The ESP32 should boot with LED mode OFF.")
-    print("Real LEDs should not start animating on power-up.")
+    print("Real sculpture LEDs connected to the Output Expander should not flicker or animate on power-up.")
+    print("Note: firmware 'Outputs=ON' means FIRE outputs are enabled; it does not mean LED UART output is on.")
     print("Each test gate opens only after Zael confirms the previous step worked.")
     print()
 
@@ -130,10 +131,50 @@ def drain_background_serial(ser: serial.Serial) -> str:
     return ser.read(ser.in_waiting).decode("utf-8", errors="replace").strip()
 
 
+def is_background_diagnostic_line(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("Buttons: ") and " | Fire: " in stripped
+
+
+def is_concise_summary_line(line: str) -> bool:
+    stripped = line.strip()
+    return (
+        stripped.startswith("LED mode")
+        or stripped.startswith("LED real output blocked")
+        or stripped.startswith("EXP REAL ")
+        or stripped.startswith("EXP SIM ")
+        or stripped.startswith("Use: led")
+        or stripped.startswith("LED commands:")
+        or stripped.startswith("Unknown LED command")
+    )
+
+
+def print_command_response_summary(command: str, response: str) -> None:
+    lines = response.splitlines()
+    background_count = sum(1 for line in lines if is_background_diagnostic_line(line))
+    summary_lines = [line for line in lines if is_concise_summary_line(line)]
+
+    if summary_lines:
+        print(f"Summary after '{command}':")
+        for line in summary_lines:
+            print(line)
+    else:
+        visible_lines = [line for line in lines if line.strip() and not is_background_diagnostic_line(line)]
+        if visible_lines:
+            print(f"Output after '{command}' follows:")
+            for line in visible_lines:
+                print(line)
+        else:
+            print(f"(no command-specific response found after '{command}')")
+
+    if background_count:
+        print(f"({background_count} repeated button/FIRE diagnostic line(s) hidden here; full raw Serial is in the log.)")
+
+
 def send_command(ser: serial.Serial, log: ValidationLog, command: str) -> str:
     background = drain_background_serial(ser)
     if background:
-        log.add("BACKGROUND SERIAL BEFORE COMMAND:")
+        log.add("RAW BACKGROUND SERIAL BEFORE COMMAND:")
         for line in background.splitlines():
             log.add(f"  {line}")
 
@@ -143,10 +184,8 @@ def send_command(ser: serial.Serial, log: ValidationLog, command: str) -> str:
     ser.flush()
     response = read_response(ser)
     if response:
-        print(f"Output after '{command}' follows.")
-        print("(It may include normal background button/FIRE diagnostics.)")
-        print(response)
-        log.add(f"OUTPUT AFTER COMMAND '{command}':")
+        print_command_response_summary(command, response)
+        log.add(f"RAW OUTPUT AFTER COMMAND '{command}':")
         for line in response.splitlines():
             log.add(f"  {line}")
     else:
@@ -211,6 +250,22 @@ def stop_with_failure(ser: serial.Serial, log: ValidationLog, reason: str) -> bo
 
 
 def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
+    print("A. Boot/reset flicker check")
+    print("In this check, LEDs means the real LED strings connected to the Output Expander.")
+    print("This does not mean the ESP32 onboard LEDs.")
+    print("India USB-only dry run: if no Output Expander and no real LED strings are connected, answer n.")
+    flickered = ask_yes_no(
+        "With the Output Expander connected and real LED strings powered, reset or power-cycle the ESP32. "
+        "Before this script sends any led command, did any real sculpture LEDs flicker, flash, or animate?",
+        default=None,
+    )
+    if flickered:
+        notes = ask_notes("Which channels/zones flickered, flashed, or animated? ")
+        record_answer(log, "Boot/reset flicker check", "FAIL", notes)
+        return stop_with_failure(ser, log, "real sculpture LEDs flickered before any led command")
+    record_answer(log, "Boot/reset flicker check", "PASS")
+
+    print()
     print("Initial status check")
     status = send_command(ser, log, "led status")
     log.add("Initial led status result captured above.")
@@ -225,13 +280,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
             return False
         record_answer(log, "Blocked guard prompt", "CONTINUE")
 
-    print("A. Safe boot check")
-    if not ask_yes_no("Did real LEDs stay off at boot?", default=None):
-        notes = ask_notes("What happened at boot? ")
-        record_answer(log, "Safe boot LEDs stayed off", "FAIL", notes)
-        return stop_with_failure(ser, log, "LEDs started unexpectedly at boot")
-    record_answer(log, "Safe boot LEDs stayed off", "PASS")
-
+    print("B. Setup/status check")
     if not ask_yes_no("Does OLED/Serial state look sensible?", default=None):
         notes = ask_notes("What looked wrong? ")
         record_answer(log, "OLED/Serial startup state", "FAIL", notes)
@@ -239,7 +288,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
     record_answer(log, "OLED/Serial startup state", "PASS")
 
     print()
-    print("B. Solid test")
+    print("C. Solid test")
     send_command(ser, log, "led solid")
     if not ask_yes_no("Did connected LED zones show a dim simple test output?", default=None):
         notes = ask_notes("What happened? ")
@@ -248,7 +297,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
     record_answer(log, "Solid test", "PASS")
 
     print()
-    print("C. Channel tests")
+    print("D. Channel tests")
     for channel in range(8):
         step = f"Channel {channel} test"
         send_command(ser, log, f"led ch {channel}")
@@ -268,7 +317,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
         record_answer(log, step, "PASS")
 
     print()
-    print("D. Animation test")
+    print("E. Animation test")
     if ask_yes_no("Solid and channel tests passed. Run animation now?", default=False):
         send_command(ser, log, "led animation")
         if ask_yes_no("Did animation look sensible?", default=None):
@@ -281,7 +330,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
         record_answer(log, "Animation test", "SKIP")
 
     print()
-    print("E. Off test")
+    print("F. Off test")
     send_command(ser, log, "led off")
     if not ask_yes_no("Did active LED output stop?", default=None):
         notes = ask_notes("What stayed on or looked wrong? ")

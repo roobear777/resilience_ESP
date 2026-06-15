@@ -560,11 +560,21 @@ Purpose:
 Confirm ESP32-S3 can send LED data to the standard Pixelblaze Output Expander v3.0 over UART.
 ```
 
+Confirmed target hardware is the ElectroMage Pixelblaze Output Expander v3.0 matching Zael's photographed board and the current ElectroMage product page:
+
+```text
+https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
+```
+
+Use that current product page as the capacity reference for this project. It documents up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output; the largest planned Tardi channel is Ch3 at 400 pixels.
+
 Current intended LED signal path:
 
 ```text
 ESP32-S3 -> UART -> Pixelblaze Output Expander v3.0 -> LED zones
 ```
+
+GPIO39 remains the planned Output Expander UART TX. It is plausible for ESP32-S3 UART TX, but it is JTAG-related and still needs physical validation during reset and at 2 Mbps. Firmware sets GPIO39 to UART-idle HIGH after setup begins; this does not control the pre-firmware reset / bootloader / JTAG window.
 
 ### India-side simulator test
 
@@ -627,6 +637,9 @@ which LED output channel is zone 8
 
 Do not use board-labelled TX/RX / UART0.
 Do not use GPIO16 because it is Button 6.
+Do not use GPIO14 or GPIO17 as Output Expander TX fallbacks because they are already assigned to FIRE7 and Button 7.
+Avoid GPIO35/36/37 on the N8R8/octal PSRAM board path.
+Avoid GPIO19/20 because of USB-related caveats.
 
 Expected result:
 
@@ -640,6 +653,7 @@ No FIRE output behavior changes during LED testing.
 Suggested first LED tests:
 
 ```text
+boot/reset flicker check before sending any led command
 led status
 led solid
 led ch 0
@@ -662,6 +676,16 @@ Zone numbering is understood and recorded.
 No wrong LED zone activates.
 No fire output is affected.
 ```
+
+Boot/reset flicker pass condition:
+
+```text
+With the Output Expander connected and real sculpture LED strings powered, reset or power-cycle the ESP32.
+Before any led command is sent, no real sculpture LEDs flicker, flash, or animate.
+If real sculpture LEDs flicker, stop and record which channels/zones flickered.
+```
+
+Optional tool check: if a logic analyzer or oscilloscope is available, probe GPIO39 during reset. This is optional.
 
 ## 13. Stage 10: LED Animation / Zone Test
 

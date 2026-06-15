@@ -8,6 +8,8 @@ This is the main current handoff for the ESP32 LED port and Pixelblaze Output Ex
 - India-side runtime can simulate a full Output Expander frame without Output Expander hardware.
 - Real UART output exists only behind a disabled-by-default guard.
 - Physical Pixelblaze Output Expander and LED validation has not yet been done.
+- Confirmed target hardware is ElectroMage Pixelblaze Output Expander v3.0, matching Zael's photographed `electromage.com Output Expander v3.0 @2021 Ben Hencke` board and the current ElectroMage product page:
+  https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
 
 ## Current Architecture
 
@@ -65,6 +67,29 @@ Do not use board-labelled TX/RX / UART0 for the Output Expander.
 Do not use GPIO16 because it is Button 6.
 Do not use GPIO23 for Tardi real output.
 
+External sanity check: GPIO39 is a plausible ESP32-S3 UART TX pin, and remains the current planned Output Expander TX. Caveat: GPIO39 is JTAG-related, so reset/default-state behaviour still needs physical validation. This is not currently a reason to change pins.
+
+If GPIO39 physically fails, review fallbacks in this order:
+
+- GPIO40 first
+- GPIO41 second
+- GPIO38 only if the issue appears specifically JTAG-related and a new pin review confirms it is safe
+
+Do not use GPIO14, GPIO16, or GPIO17 as fallbacks because they are already assigned in this project. Avoid GPIO35/36/37 on the N8R8/octal PSRAM board path, and avoid GPIO19/20 because of USB-related caveats.
+
+## GPIO39 Firmware Idle State
+
+Firmware now puts the planned Output Expander TX pin into UART-idle HIGH during startup inside `ledExpanderOutputBegin()`:
+
+```cpp
+digitalWrite(PB_EXPANDER_TX_PIN, HIGH);
+pinMode(PB_EXPANDER_TX_PIN, OUTPUT);
+```
+
+This does not start `Serial1`, does not call `PBDriverAdapter::begin()`, does not call `PBDriverAdapter::show()`, and does not send Output Expander frames. It only makes GPIO39's firmware-runtime idle state explicit after user firmware setup begins.
+
+This cannot control the pre-firmware reset / bootloader / JTAG window before user firmware runs, so the California validation flow includes a boot/reset flicker check.
+
 ## Real Output Guard
 
 Real Output Expander output is disabled by default:
@@ -105,6 +130,8 @@ Do not assume Zone 1 maps to Channel 0.
 |              Ch7 | Z7 digestive                |          75 |                1833 |
 
 Total = 2008 pixels.
+
+The current ElectroMage product page documents up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output. The largest planned Tardi channel is Ch3 / Z3 midbody at 400 pixels, so the planned channel lengths are within that documented capacity. Older Output Expander README/version information with lower per-channel limits should not be used as the capacity reference for this project.
 
 ## Byte Order
 
@@ -173,10 +200,13 @@ Key pass values:
 
 - No physical Pixelblaze Output Expander tested in India.
 - No GPIO39 2 Mbps UART electrical validation yet.
+- No GPIO39 reset/default-state flicker validation yet.
 - No real LED strip output yet.
 - No colour order validation on actual LEDs yet.
 - No real channel physical order validation yet.
 - No sculpture power/injection validation yet.
+- No confirmation yet that all outputs are WS2811/WS2812-style rather than APA102/DotStar.
+- No confirmation yet that Z7 physical wiring exactly matches the 75 logical pixel assumption.
 
 ## California Validation Checklist
 
@@ -196,6 +226,8 @@ EXP SIM OK channels=8 pixels=2008 failed=0 byteOrder=GRB
 - Do not use board-labelled TX/RX / UART0.
 - Do not use GPIO16.
 - Confirm Output Expander power and LED power are correct before connecting LEDs.
+- With real sculpture LED strings powered, reset or power-cycle the ESP32 and confirm no real sculpture LEDs flicker, flash, or animate before any `led` command is sent.
+- If a logic analyzer or oscilloscope is available, optionally probe GPIO39 during reset.
 
 When ready for a controlled test:
 
