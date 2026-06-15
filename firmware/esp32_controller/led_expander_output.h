@@ -22,6 +22,13 @@ struct LedExpanderFrameStats {
   LedExpanderChannelFrameStats channels[8];
 };
 
+enum LedOutputMode {
+  LED_OUTPUT_OFF,
+  LED_OUTPUT_VALIDATE_SOLID,
+  LED_OUTPUT_VALIDATE_CHANNEL,
+  LED_OUTPUT_ANIMATION
+};
+
 void ledExpanderOutputBegin();
 void ledExpanderOutputUpdate(uint32_t nowMs);
 bool ledExpanderOutputIsEnabled();
@@ -33,6 +40,12 @@ uint8_t ledExpanderOutputConfiguredChannelCount();
 uint16_t ledExpanderOutputConfiguredPixelCount();
 uint32_t ledExpanderOutputPlannedBaudRate();
 int ledExpanderOutputPlannedTxPin();
+LedOutputMode ledExpanderOutputMode();
+int ledExpanderOutputValidationChannel();
+const char *ledExpanderOutputModeName();
+bool ledExpanderOutputSetMode(LedOutputMode mode, Stream &out);
+bool ledExpanderOutputSetChannelValidationMode(uint8_t channelId, Stream &out);
+void ledExpanderOutputPrintRuntimeStatus(Stream &out);
 uint16_t ledExpanderOutputChannelPixelCount(uint8_t channelId);
 uint16_t ledExpanderOutputChannelLogicalStart(uint8_t channelId);
 bool ledExpanderOutputRenderPixelForTest(

@@ -10,6 +10,7 @@ docs/interaction_logic.md
 docs/pin_mapping.md
 docs/test_plan.md
 docs/esp32_led_port_status.md
+VALIDATION_README.md
 firmware/esp32_controller/esp32_controller.ino
 
 

@@ -97,16 +97,78 @@ static PBDriverAdapter ledExpanderDriver;
 static bool ledExpanderOutputEnabled = false;
 static bool ledExpanderOutputInitialized = false;
 static bool ledExpanderRealOutputStarted = false;
+static LedOutputMode ledExpanderRuntimeMode = LED_OUTPUT_OFF;
+static int ledExpanderValidationChannel = -1;
 static uint8_t ledExpanderConfiguredChannelCount = 0;
 static uint16_t ledExpanderConfiguredPixelCount = 0;
 static uint32_t ledExpanderRenderNowMs = 0;
 
+static const LedExpanderChannelConfig *ledExpanderChannelConfigForLogicalIndex(uint16_t logicalPixelIndex) {
+  for (uint8_t i = 0; i < PB_EXPANDER_CHANNEL_COUNT; i++) {
+    const LedExpanderChannelConfig &config = PB_EXPANDER_CHANNELS[i];
+    if (
+      logicalPixelIndex >= config.startIndex
+      && logicalPixelIndex < static_cast<uint16_t>(config.startIndex + config.pixels)
+    ) {
+      return &config;
+    }
+  }
+
+  return nullptr;
+}
+
+static LedRgbColor ledExpanderValidationColorForChannel(uint8_t channelId) {
+  static const LedRgbColor colors[PB_EXPANDER_CHANNEL_COUNT] = {
+    { 12, 6, 0 },
+    { 8, 8, 8 },
+    { 0, 12, 12 },
+    { 0, 0, 14 },
+    { 10, 0, 14 },
+    { 14, 6, 0 },
+    { 14, 10, 0 },
+    { 14, 0, 0 }
+  };
+
+  if (channelId >= PB_EXPANDER_CHANNEL_COUNT) {
+    return { 0, 0, 0 };
+  }
+
+  return colors[channelId];
+}
+
+static void ledExpanderPackBlack(uint8_t rgbw[]) {
+  rgbw[0] = 0;
+  rgbw[1] = 0;
+  rgbw[2] = 0;
+  rgbw[3] = 0;
+}
+
 static void ledExpanderRenderCallback(uint16_t logicalPixelIndex, uint8_t rgbw[]) {
+  if (ledExpanderRuntimeMode == LED_OUTPUT_OFF) {
+    ledExpanderPackBlack(rgbw);
+    return;
+  }
+
+  if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_SOLID) {
+    LedRgbColor rgb = { 8, 8, 8 };
+    ledExpanderPackRgbAsGrb(rgb, rgbw, 4);
+    return;
+  }
+
+  if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
+    const LedExpanderChannelConfig *config = ledExpanderChannelConfigForLogicalIndex(logicalPixelIndex);
+    if (config == nullptr || config->channelId != ledExpanderValidationChannel) {
+      ledExpanderPackBlack(rgbw);
+      return;
+    }
+
+    LedRgbColor rgb = ledExpanderValidationColorForChannel(config->channelId);
+    ledExpanderPackRgbAsGrb(rgb, rgbw, 4);
+    return;
+  }
+
   if (!ledExpanderOutputRenderPackedPixelForTest(logicalPixelIndex, ledExpanderRenderNowMs, rgbw, 4)) {
-    rgbw[0] = 0;
-    rgbw[1] = 0;
-    rgbw[2] = 0;
-    rgbw[3] = 0;
+    ledExpanderPackBlack(rgbw);
   }
 }
 
@@ -140,19 +202,24 @@ void ledExpanderOutputBegin() {
   ledExpanderConfiguredChannelCount = PB_EXPANDER_CHANNEL_COUNT;
   ledExpanderConfiguredPixelCount = configuredPixels;
   ledExpanderOutputInitialized = true;
-
-  if (ENABLE_REAL_PB_EXPANDER_OUTPUT) {
-    ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
-    ledExpanderRealOutputStarted = true;
-  }
 }
 
-void ledExpanderOutputUpdate(uint32_t nowMs) {
+static bool ledExpanderOutputStartRealOutputIfAllowed(Stream &out) {
   if (!ENABLE_REAL_PB_EXPANDER_OUTPUT) {
-    return;
+    out.println("LED real output blocked: ENABLE_REAL_PB_EXPANDER_OUTPUT=false");
+    return false;
   }
 
   if (!ledExpanderRealOutputStarted) {
+    ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
+    ledExpanderRealOutputStarted = true;
+  }
+
+  return true;
+}
+
+static void ledExpanderOutputShowFrameIfStarted(uint32_t nowMs) {
+  if (!ENABLE_REAL_PB_EXPANDER_OUTPUT || !ledExpanderRealOutputStarted) {
     return;
   }
 
@@ -162,6 +229,22 @@ void ledExpanderOutputUpdate(uint32_t nowMs) {
     ledExpanderRenderCallback,
     ledExpanderChannelSwitchCallback
   );
+}
+
+void ledExpanderOutputUpdate(uint32_t nowMs) {
+  if (ledExpanderRuntimeMode == LED_OUTPUT_OFF) {
+    return;
+  }
+
+  if (!ENABLE_REAL_PB_EXPANDER_OUTPUT) {
+    return;
+  }
+
+  if (!ledExpanderRealOutputStarted) {
+    return;
+  }
+
+  ledExpanderOutputShowFrameIfStarted(nowMs);
 }
 
 bool ledExpanderOutputIsEnabled() {
@@ -198,6 +281,93 @@ uint32_t ledExpanderOutputPlannedBaudRate() {
 
 int ledExpanderOutputPlannedTxPin() {
   return PB_EXPANDER_TX_PIN;
+}
+
+LedOutputMode ledExpanderOutputMode() {
+  return ledExpanderRuntimeMode;
+}
+
+int ledExpanderOutputValidationChannel() {
+  return ledExpanderValidationChannel;
+}
+
+const char *ledExpanderOutputModeName() {
+  switch (ledExpanderRuntimeMode) {
+    case LED_OUTPUT_VALIDATE_SOLID:
+      return "VALIDATE_SOLID";
+    case LED_OUTPUT_VALIDATE_CHANNEL:
+      return "VALIDATE_CHANNEL";
+    case LED_OUTPUT_ANIMATION:
+      return "ANIMATION";
+    case LED_OUTPUT_OFF:
+    default:
+      return "OFF";
+  }
+}
+
+bool ledExpanderOutputSetMode(LedOutputMode mode, Stream &out) {
+  if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
+    out.println("Use: led ch 0..7");
+    return false;
+  }
+
+  if (mode == LED_OUTPUT_OFF) {
+    ledExpanderRuntimeMode = LED_OUTPUT_OFF;
+    ledExpanderValidationChannel = -1;
+
+    if (ENABLE_REAL_PB_EXPANDER_OUTPUT && ledExpanderRealOutputStarted) {
+      ledExpanderOutputShowFrameIfStarted(millis());
+    }
+
+    out.println("LED mode: OFF");
+    return true;
+  }
+
+  if (!ledExpanderOutputStartRealOutputIfAllowed(out)) {
+    return false;
+  }
+
+  ledExpanderRuntimeMode = mode;
+  ledExpanderValidationChannel = -1;
+  out.print("LED mode: ");
+  out.println(ledExpanderOutputModeName());
+  return true;
+}
+
+bool ledExpanderOutputSetChannelValidationMode(uint8_t channelId, Stream &out) {
+  if (channelId >= PB_EXPANDER_CHANNEL_COUNT) {
+    out.println("LED channel must be 0..7");
+    return false;
+  }
+
+  if (!ledExpanderOutputStartRealOutputIfAllowed(out)) {
+    return false;
+  }
+
+  ledExpanderRuntimeMode = LED_OUTPUT_VALIDATE_CHANNEL;
+  ledExpanderValidationChannel = channelId;
+  out.print("LED mode: VALIDATE_CHANNEL ");
+  out.println(channelId);
+  return true;
+}
+
+void ledExpanderOutputPrintRuntimeStatus(Stream &out) {
+  out.print("LED mode=");
+  out.print(ledExpanderOutputModeName());
+
+  if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
+    out.print(" ch=");
+    out.print(ledExpanderValidationChannel);
+  }
+
+  out.print(" allowed=");
+  out.print(ledExpanderOutputRealOutputAllowed() ? 1 : 0);
+  out.print(" started=");
+  out.print(ledExpanderOutputRealOutputStarted() ? 1 : 0);
+  out.print(" tx=");
+  out.print(ledExpanderOutputPlannedTxPin());
+  out.print(" baud=");
+  out.println(ledExpanderOutputPlannedBaudRate());
 }
 
 uint16_t ledExpanderOutputChannelPixelCount(uint8_t channelId) {

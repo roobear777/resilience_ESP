@@ -202,6 +202,7 @@ unsigned long lastOledUpdateMs = 0;
 unsigned long lastExpanderSimDiagnosticMs = 0;
 
 bool oledReady = false;
+String serialLedCommandBuffer = "";
 
 // ==================================================
 // SETUP
@@ -233,6 +234,7 @@ void setup() {
 // ==================================================
 
 void loop() {
+  processSerialLedCommands();
   readButtons();
   updateButtonDebounce();
   updateInteractionLogic();
@@ -487,6 +489,94 @@ void updateFireOutputs() {
 // SERIAL DEBUG
 // ==================================================
 
+void processSerialLedCommands() {
+  while (Serial.available() > 0) {
+    char incoming = static_cast<char>(Serial.read());
+
+    if (incoming == '\n' || incoming == '\r') {
+      if (serialLedCommandBuffer.length() > 0) {
+        handleSerialLedCommand(serialLedCommandBuffer);
+        serialLedCommandBuffer = "";
+      }
+      continue;
+    }
+
+    if (incoming >= 32 && incoming <= 126 && serialLedCommandBuffer.length() < 80) {
+      serialLedCommandBuffer += incoming;
+    }
+  }
+}
+
+void handleSerialLedCommand(String command) {
+  command.trim();
+  command.toLowerCase();
+
+  if (command.length() == 0) {
+    return;
+  }
+
+  if (command == "led status") {
+    ledExpanderOutputPrintRuntimeStatus(Serial);
+    return;
+  }
+
+  if (command == "led off") {
+    ledExpanderOutputSetMode(LED_OUTPUT_OFF, Serial);
+    return;
+  }
+
+  if (command == "led solid") {
+    ledExpanderOutputSetMode(LED_OUTPUT_VALIDATE_SOLID, Serial);
+    return;
+  }
+
+  if (command == "led animation") {
+    ledExpanderOutputSetMode(LED_OUTPUT_ANIMATION, Serial);
+    return;
+  }
+
+  if (command.startsWith("led ch ")) {
+    uint8_t channelId = 0;
+    if (parseLedChannelCommand(command, channelId)) {
+      ledExpanderOutputSetChannelValidationMode(channelId, Serial);
+    } else {
+      Serial.println("Use: led ch 0..7");
+    }
+    return;
+  }
+
+  if (command == "led help") {
+    printLedCommandHelp();
+    return;
+  }
+
+  if (command.startsWith("led")) {
+    Serial.println("Unknown LED command. Use: led help");
+  }
+}
+
+bool parseLedChannelCommand(const String &command, uint8_t &channelId) {
+  String value = command.substring(7);
+  value.trim();
+
+  if (value.length() != 1 || value[0] < '0' || value[0] > '7') {
+    return false;
+  }
+
+  channelId = static_cast<uint8_t>(value[0] - '0');
+  return true;
+}
+
+void printLedCommandHelp() {
+  Serial.println("LED commands:");
+  Serial.println("  led status");
+  Serial.println("  led off");
+  Serial.println("  led solid");
+  Serial.println("  led ch 0..7");
+  Serial.println("  led animation");
+  Serial.println("  led help");
+}
+
 void printSerialDebugIfDue() {
   unsigned long now = millis();
 
@@ -674,6 +764,22 @@ bool shouldShowOledSetupPage(unsigned long now) {
 }
 
 String getLedUartDisplayLabel() {
+  LedOutputMode mode = ledExpanderOutputMode();
+
+  if (mode == LED_OUTPUT_VALIDATE_SOLID) {
+    return "LED TEST SOLID";
+  }
+
+  if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
+    String label = "LED TEST CH";
+    label += String(ledExpanderOutputValidationChannel());
+    return label;
+  }
+
+  if (mode == LED_OUTPUT_ANIMATION) {
+    return "LED ANIMATION";
+  }
+
   if (!ledExpanderOutputRealOutputAllowed()) {
     return "LED UART OFF";
   }
@@ -695,7 +801,11 @@ String getLedUartTxDisplayLabel() {
 }
 
 String getRealLedDisplayLabel() {
-  if (ledExpanderOutputRealOutputAllowed() && ledExpanderOutputRealOutputStarted()) {
+  if (
+    ledExpanderOutputMode() != LED_OUTPUT_OFF
+    && ledExpanderOutputRealOutputAllowed()
+    && ledExpanderOutputRealOutputStarted()
+  ) {
     return "Verify LEDs";
   }
 
