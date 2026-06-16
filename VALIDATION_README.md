@@ -79,7 +79,7 @@ Capacity note: use the current ElectroMage product page for this board as the ca
 
 - "Real output allowed" means this firmware is permitted to talk to the Output Expander.
 - "LED mode OFF" means it is not sending active LED test or animation data yet.
-- The validation firmware may allow real output, but it should still boot in LED mode OFF.
+- The current California validation firmware allows real output, but it should still boot in LED mode OFF.
 - Nothing should start animating just from power-up.
 - The Terminal script opens the next gate only after Zael confirms the previous one worked.
 - The ESP32 cannot automatically know whether the physical wiring is correct. Zael must visually confirm real LED behaviour.
@@ -101,6 +101,7 @@ The guided script first asks Zael to reset or power-cycle the ESP32 while the Ou
 India USB-only dry run:
 
 - if no Output Expander and no real LED strings are connected, answer `n` to the flicker question.
+- for future USB-only dry runs without Output Expander hardware, temporarily set `ENABLE_REAL_PB_EXPANDER_OUTPUT=false` before uploading.
 - this only tests the Python / USB Serial / safety flow.
 - it does not prove GPIO39 electrical output, 2M UART timing, Output Expander response, real LEDs, colour order, or channel mapping.
 
@@ -143,9 +144,31 @@ If nothing lights:
 
 - stop
 - record what happened
-- do not continue to channel tests
+- do not continue to colour or channel tests
 
-### Step 3 - Channel Tests
+### Step 3 - Colour-Order Tests
+
+Commands:
+
+```text
+led red
+led green
+led blue
+```
+
+Expected:
+
+- connected LED zones show dim red, then dim green, then dim blue.
+
+These low-brightness all-channel tests confirm that red, green, and blue are not swapped on the real LED strings. The firmware currently packs Output Expander bytes as GRB, but the ESP32 cannot know whether the physical LED colour order is correct without Zael visually confirming it.
+
+If a colour is wrong:
+
+- stop before channel tests and animation
+- record which command was used
+- record what colour actually appeared
+
+### Step 4 - Channel Tests
 
 Commands:
 
@@ -176,7 +199,7 @@ If the wrong zone lights, multiple zones light, colours look swapped, or nothing
 - stop before animation
 - record the details
 
-### Step 4 - Animation Test
+### Step 5 - Animation Test
 
 Command:
 
@@ -184,7 +207,7 @@ Command:
 led animation
 ```
 
-Only run this if solid and channel tests are sensible.
+Only run this if solid, colour-order, and channel tests are sensible.
 
 Expected:
 
@@ -194,7 +217,7 @@ If it looks wrong:
 
 - record what happened
 
-### Step 5 - Off Test
+### Step 6 - Off Test
 
 Command:
 
@@ -278,6 +301,9 @@ led status
 led help
 led off
 led solid
+led red
+led green
+led blue
 led ch 0
 led ch 1
 led ch 2
@@ -295,8 +321,9 @@ Command meanings:
 - `led help`: prints the command list.
 - `led off`: stops active LED output and returns to OFF mode.
 - `led solid`: low-brightness all-channel validation test.
+- `led red`, `led green`, `led blue`: low-brightness all-channel colour-order tests.
 - `led ch N`: low-brightness selected-channel test; other channels should be off.
-- `led animation`: full animation output; run only after solid and channel tests pass.
+- `led animation`: full animation output; run only after solid, colour-order, and channel tests pass.
 
 ## Validation Logs
 

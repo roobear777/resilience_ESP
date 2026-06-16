@@ -185,7 +185,8 @@ baud rate 115200
 no external fire hardware connected
 no relay hardware connected
 no LED strip hardware connected
-real Output Expander output disabled unless a California validation build deliberately allows it
+current California validation firmware allows real Output Expander output, but runtime LED mode still boots OFF
+for future India USB-only dry runs, temporarily set ENABLE_REAL_PB_EXPANDER_OUTPUT=false before upload
 ```
 
 Expected startup output should confirm:
@@ -586,7 +587,7 @@ Setup:
 compile firmware in Arduino IDE
 upload to ESP32-S3
 open Serial Monitor at 115200
-leave real Output Expander output disabled
+for an India USB-only dry run, temporarily set ENABLE_REAL_PB_EXPANDER_OUTPUT=false before upload
 no LED strip hardware required
 ```
 
@@ -656,6 +657,9 @@ Suggested first LED tests:
 boot/reset flicker check before sending any led command
 led status
 led solid
+led red
+led green
+led blue
 led ch 0
 led ch 1
 led ch 2
@@ -672,6 +676,7 @@ Pass condition:
 ```text
 ESP32 UART output reaches the Output Expander.
 The Output Expander drives the intended LED zone.
+Dim red, green, and blue colour-order tests appear as the expected colours.
 Zone numbering is understood and recorded.
 No wrong LED zone activates.
 No fire output is affected.

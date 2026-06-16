@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 SCRIPT_NAME = "validate_led_expander.py"
-SCRIPT_VERSION = "1.3"
+SCRIPT_VERSION = "1.4"
 USB_SERIAL_BAUD = 115200
 LOG_DIR = Path("validation_logs")
 
@@ -313,6 +313,37 @@ def stop_with_failure(ser: serial.Serial, log: ValidationLog, reason: str) -> bo
     return False
 
 
+def run_colour_order_tests(ser: serial.Serial, log: ValidationLog) -> bool:
+    print()
+    print("D. Colour-order tests")
+    print("These low-brightness tests confirm red, green, and blue are not swapped.")
+
+    tests = (
+        ("red", "RED"),
+        ("green", "GREEN"),
+        ("blue", "BLUE"),
+    )
+
+    for command_colour, expected_colour in tests:
+        step = f"Colour test {expected_colour}"
+        send_command(ser, log, f"led {command_colour}")
+        log.add(f"{step} expected colour: {expected_colour}")
+
+        if ask_yes_no(f"Did the LEDs look {expected_colour.lower()}?", default=None):
+            record_answer(log, step, "PASS")
+            continue
+
+        actual_colour = ask_notes("What colour did they actually show? ")
+        notes = ask_notes("Any extra notes about the colour mismatch? ")
+        mismatch_notes = f"actual={actual_colour or '(not entered)'}"
+        if notes:
+            mismatch_notes += f"; notes={notes}"
+        record_answer(log, step, "FAIL", mismatch_notes)
+        return stop_with_failure(ser, log, f"{expected_colour.lower()} colour-order test failed")
+
+    return True
+
+
 def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
     print("A. Boot/reset flicker check")
     print("In this check, LEDs means the real LED strings connected to the Output Expander.")
@@ -361,7 +392,11 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
     record_answer(log, "Solid test", "PASS")
 
     print()
-    print("D. Channel tests")
+    if not run_colour_order_tests(ser, log):
+        return False
+
+    print()
+    print("E. Channel tests")
     for channel in range(8):
         step = f"Channel {channel} test"
         send_command(ser, log, f"led ch {channel}")
@@ -381,8 +416,8 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
         record_answer(log, step, "PASS")
 
     print()
-    print("E. Animation test")
-    if ask_yes_no("Solid and channel tests passed. Run animation now?", default=False):
+    print("F. Animation test")
+    if ask_yes_no("Solid, colour-order, and channel tests passed. Run animation now?", default=False):
         send_command(ser, log, "led animation")
         if ask_yes_no("Did animation look sensible?", default=None):
             record_answer(log, "Animation test", "PASS")
@@ -394,7 +429,7 @@ def run_validation(ser: serial.Serial, log: ValidationLog) -> bool:
         record_answer(log, "Animation test", "SKIP")
 
     print()
-    print("F. Off test")
+    print("G. Off test")
     send_command(ser, log, "led off")
     if not ask_yes_no("Did active LED output stop?", default=None):
         notes = ask_notes("What stayed on or looked wrong? ")

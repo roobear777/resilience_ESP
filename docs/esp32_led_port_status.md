@@ -5,8 +5,9 @@ This is the main current handoff for the ESP32 LED port and Pixelblaze Output Ex
 ## Current LED Port Summary
 
 - ESP32 firmware now has a complete software-side render path for the Pixelblaze Output Expander.
-- India-side runtime can simulate a full Output Expander frame without Output Expander hardware.
-- Real UART output exists only behind a disabled-by-default guard.
+- The current checked firmware is a California validation build for physical Output Expander testing.
+- Real UART output is allowed at compile time, but runtime LED output still boots OFF.
+- India-side runtime can simulate a full Output Expander frame without Output Expander hardware if `ENABLE_REAL_PB_EXPANDER_OUTPUT` is temporarily set back to `false` before upload.
 - Physical Pixelblaze Output Expander and LED validation has not yet been done.
 - Confirmed target hardware is ElectroMage Pixelblaze Output Expander v3.0, matching Zael's photographed `electromage.com Output Expander v3.0 @2021 Ben Hencke` board and the current ElectroMage product page:
   https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
@@ -92,11 +93,13 @@ This cannot control the pre-firmware reset / bootloader / JTAG window before use
 
 ## Real Output Guard
 
-Real Output Expander output is disabled by default:
+The current checked validation firmware allows real Output Expander output at compile time:
 
 ```cpp
-ENABLE_REAL_PB_EXPANDER_OUTPUT = false
+ENABLE_REAL_PB_EXPANDER_OUTPUT = true
 ```
+
+For future India USB-only dry runs without an Output Expander, temporarily set this guard back to `false` before uploading.
 
 When false:
 
@@ -106,13 +109,18 @@ When false:
 - `PBDriverAdapter::show()` is not called.
 - No Output Expander frames are sent.
 
-When California later validates hardware, enabling this guard is the deliberate step that allows UART output. It does not by itself start UART output on boot. The runtime LED mode still boots as `LED_OUTPUT_OFF`.
+The guard being true does not by itself start UART output on boot. The runtime LED mode still boots as `LED_OUTPUT_OFF`.
 
 With the guard enabled, `started=1` should only be expected after a guarded runtime command starts real output, such as:
 
 - `led solid`
+- `led red`
+- `led green`
+- `led blue`
 - `led ch N`
 - `led animation`
+
+`led red`, `led green`, and `led blue` are low-brightness all-channel colour-order tests. They are intended to confirm visually, on the real California LED strings, that red, green, and blue are not swapped.
 
 ## Output Expander Channel Mapping
 
@@ -164,7 +172,7 @@ Final colour order still needs California bench validation with real red/green/b
 Expected Serial output shape:
 
 ```text
-EXP REAL allowed=0 started=0 tx=39 baud=2000000
+EXP REAL allowed=1 started=0 tx=39 baud=2000000
 EXP SIM OK channels=8 pixels=2008 failed=0 checksum=<varies> byteOrder=GRB
 CH0 start=1908 px=100 ...
 CH1 start=0 px=208 ...
@@ -180,7 +188,7 @@ The checksum changes with animation time/state and is not a fixed universal valu
 
 Key pass values:
 
-- `allowed=0`
+- `allowed=1`
 - `started=0`
 - `channels=8`
 - `pixels=2008`
@@ -210,14 +218,14 @@ Key pass values:
 
 ## California Validation Checklist
 
-Before enabling real output:
+Before starting controlled real output:
 
 - Confirm board is ESP32-S3 DevKitC-1 / same pin mapping.
 - Confirm firmware compiles/uploads.
 - Confirm Serial shows:
 
 ```text
-EXP REAL allowed=0 started=0 tx=39 baud=2000000
+EXP REAL allowed=1 started=0 tx=39 baud=2000000
 EXP SIM OK channels=8 pixels=2008 failed=0 byteOrder=GRB
 ```
 
@@ -231,13 +239,20 @@ EXP SIM OK channels=8 pixels=2008 failed=0 byteOrder=GRB
 
 When ready for a controlled test:
 
-- Change `ENABLE_REAL_PB_EXPANDER_OUTPUT` to `true`.
-- Upload.
+- Upload the California validation firmware.
 - Confirm Serial status shows `allowed=1` after upload, while runtime LED mode still starts OFF.
-- Run a guarded runtime command such as `led solid`, `led ch N`, or `led animation`.
+- Run the guarded validation sequence:
+  - boot/reset flicker check
+  - `led status`
+  - `led solid`
+  - `led red`
+  - `led green`
+  - `led blue`
+  - `led ch 0` through `led ch 7`
+  - optional `led animation`
+  - `led off`
 - Confirm Serial status changes to `started=1` only after that command starts real output.
-- Start with a small safe LED/zone test if possible.
-- Validate red/green/blue colour order.
+- Validate red/green/blue colour order with the low-brightness colour tests. Physical colour order still needs California visual confirmation.
 - Validate Ch0..Ch7 physical zone order.
 - Only then scale to full sculpture output.
 
