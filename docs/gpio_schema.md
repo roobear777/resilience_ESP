@@ -141,15 +141,15 @@ These GPIOs passed the same LOW/HIGH input mapping test, but are not currently a
 | GPIO | Status | Bench result | Notes |
 |---:|---|---|---|
 | GPIO3 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Strapping-related caution; leave unassigned unless deliberately needed |
-| GPIO19 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO20 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO35 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO36 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO37 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO38 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Leave unassigned for now |
-| GPIO39 | bench-tested OK / planned LED UART TX | LOW idle, HIGH when connected to 3V3 | Planned Pixelblaze Output Expander UART TX |
-| GPIO40 | bench-tested OK / available candidate | LOW idle, HIGH when connected to 3V3 | Possible fallback UART or diagnostic pin |
-| GPIO41 | bench-tested OK / available candidate | LOW idle, HIGH when connected to 3V3 | Possible fallback UART or diagnostic pin |
+| GPIO19 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Avoid for Output Expander TX because of USB-related caveats |
+| GPIO20 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Avoid for Output Expander TX because of USB-related caveats |
+| GPIO35 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Avoid for N8R8/octal PSRAM board path |
+| GPIO36 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Avoid for N8R8/octal PSRAM board path |
+| GPIO37 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Avoid for N8R8/octal PSRAM board path |
+| GPIO38 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Only investigate as Output Expander TX fallback if GPIO39 issue appears JTAG-related |
+| GPIO39 | bench-tested OK / planned LED UART TX | LOW idle, HIGH when connected to 3V3 | Planned Pixelblaze Output Expander UART TX; JTAG-related caveat requires physical validation |
+| GPIO40 | bench-tested OK / available candidate | LOW idle, HIGH when connected to 3V3 | First fallback if GPIO39 physically fails |
+| GPIO41 | bench-tested OK / available candidate | LOW idle, HIGH when connected to 3V3 | Second fallback if GPIO39 physically fails |
 | GPIO45 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Strapping-related caution; leave unassigned unless deliberately needed |
 | GPIO46 | bench-tested OK / caution | LOW idle, HIGH when connected to 3V3 | Strapping-related caution; leave unassigned unless deliberately needed |
 

@@ -18,7 +18,7 @@ docs/led_output_expander.md
 docs/led_animation_architecture.md
 ```
 
-Current LED port status: the ESP32 software-side render path through the Pixelblaze Output Expander simulator is implemented and passing runtime Serial diagnostics. Real Output Expander UART output compiles but is disabled by default for India-side development. See `docs/esp32_led_port_status.md` for the current handoff and California validation checklist.
+Current LED port status: the ESP32 software-side render path through the Pixelblaze Output Expander simulator is implemented and passing runtime Serial diagnostics. The checked firmware is currently a California validation build: real Output Expander output is allowed at compile time, but runtime LED mode still boots OFF and must be started deliberately. For India USB-only dry runs without Output Expander hardware, temporarily set `ENABLE_REAL_PB_EXPANDER_OUTPUT=false` before upload. See `docs/esp32_led_port_status.md` for the current handoff and California validation checklist.
 
 ## 1. Controller Target
 

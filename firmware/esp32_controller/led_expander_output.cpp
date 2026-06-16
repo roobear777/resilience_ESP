@@ -13,8 +13,8 @@ constexpr uint32_t PB_EXPANDER_BAUD_RATE = 2000000;
 constexpr uint8_t PB_EXPANDER_CHANNEL_COUNT = 8;
 constexpr uint32_t PB_EXPANDER_WS2812_FREQUENCY = 800000;
 
-// California hardware validation only. Keep false for India/no-expander testing.
-constexpr bool ENABLE_REAL_PB_EXPANDER_OUTPUT = false;
+// California hardware validation build. Set false for India/no-expander testing.
+constexpr bool ENABLE_REAL_PB_EXPANDER_OUTPUT = true;
 
 struct LedExpanderChannelConfig {
   uint8_t channelId;
@@ -99,6 +99,7 @@ static bool ledExpanderOutputInitialized = false;
 static bool ledExpanderRealOutputStarted = false;
 static LedOutputMode ledExpanderRuntimeMode = LED_OUTPUT_OFF;
 static int ledExpanderValidationChannel = -1;
+static LedValidationColor ledExpanderValidationColor = LED_VALIDATION_COLOR_RED;
 static uint8_t ledExpanderConfiguredChannelCount = 0;
 static uint16_t ledExpanderConfiguredPixelCount = 0;
 static uint32_t ledExpanderRenderNowMs = 0;
@@ -136,6 +137,18 @@ static LedRgbColor ledExpanderValidationColorForChannel(uint8_t channelId) {
   return colors[channelId];
 }
 
+static LedRgbColor ledExpanderValidationRgbForColor(LedValidationColor color) {
+  switch (color) {
+    case LED_VALIDATION_COLOR_GREEN:
+      return { 0, 12, 0 };
+    case LED_VALIDATION_COLOR_BLUE:
+      return { 0, 0, 12 };
+    case LED_VALIDATION_COLOR_RED:
+    default:
+      return { 12, 0, 0 };
+  }
+}
+
 static void ledExpanderPackBlack(uint8_t rgbw[]) {
   rgbw[0] = 0;
   rgbw[1] = 0;
@@ -167,6 +180,12 @@ static void ledExpanderRenderCallback(uint16_t logicalPixelIndex, uint8_t rgbw[]
     return;
   }
 
+  if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_COLOR) {
+    LedRgbColor rgb = ledExpanderValidationRgbForColor(ledExpanderValidationColor);
+    ledExpanderPackRgbAsGrb(rgb, rgbw, 4);
+    return;
+  }
+
   if (!ledExpanderOutputRenderPackedPixelForTest(logicalPixelIndex, ledExpanderRenderNowMs, rgbw, 4)) {
     ledExpanderPackBlack(rgbw);
   }
@@ -177,6 +196,10 @@ static void ledExpanderChannelSwitchCallback(PBChannel *channel) {
 }
 
 void ledExpanderOutputBegin() {
+  // UART TX idles HIGH; set the planned expander TX pin safe before Serial1 owns it.
+  digitalWrite(PB_EXPANDER_TX_PIN, HIGH);
+  pinMode(PB_EXPANDER_TX_PIN, OUTPUT);
+
   std::unique_ptr<std::vector<PBChannel>> channels(new std::vector<PBChannel>(PB_EXPANDER_CHANNEL_COUNT));
   uint16_t configuredPixels = 0;
 
@@ -291,8 +314,14 @@ int ledExpanderOutputValidationChannel() {
   return ledExpanderValidationChannel;
 }
 
+LedValidationColor ledExpanderOutputValidationColor() {
+  return ledExpanderValidationColor;
+}
+
 const char *ledExpanderOutputModeName() {
   switch (ledExpanderRuntimeMode) {
+    case LED_OUTPUT_VALIDATE_COLOR:
+      return "VALIDATE_COLOR";
     case LED_OUTPUT_VALIDATE_SOLID:
       return "VALIDATE_SOLID";
     case LED_OUTPUT_VALIDATE_CHANNEL:
@@ -305,15 +334,33 @@ const char *ledExpanderOutputModeName() {
   }
 }
 
+const char *ledExpanderOutputValidationColorName() {
+  switch (ledExpanderValidationColor) {
+    case LED_VALIDATION_COLOR_GREEN:
+      return "green";
+    case LED_VALIDATION_COLOR_BLUE:
+      return "blue";
+    case LED_VALIDATION_COLOR_RED:
+    default:
+      return "red";
+  }
+}
+
 bool ledExpanderOutputSetMode(LedOutputMode mode, Stream &out) {
   if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
     out.println("Use: led ch 0..7");
     return false;
   }
 
+  if (mode == LED_OUTPUT_VALIDATE_COLOR) {
+    out.println("Use: led red, led green, or led blue");
+    return false;
+  }
+
   if (mode == LED_OUTPUT_OFF) {
     ledExpanderRuntimeMode = LED_OUTPUT_OFF;
     ledExpanderValidationChannel = -1;
+    ledExpanderValidationColor = LED_VALIDATION_COLOR_RED;
 
     if (ENABLE_REAL_PB_EXPANDER_OUTPUT && ledExpanderRealOutputStarted) {
       ledExpanderOutputShowFrameIfStarted(millis());
@@ -346,8 +393,22 @@ bool ledExpanderOutputSetChannelValidationMode(uint8_t channelId, Stream &out) {
 
   ledExpanderRuntimeMode = LED_OUTPUT_VALIDATE_CHANNEL;
   ledExpanderValidationChannel = channelId;
+  ledExpanderValidationColor = LED_VALIDATION_COLOR_RED;
   out.print("LED mode: VALIDATE_CHANNEL ");
   out.println(channelId);
+  return true;
+}
+
+bool ledExpanderOutputSetColorValidationMode(LedValidationColor color, Stream &out) {
+  if (!ledExpanderOutputStartRealOutputIfAllowed(out)) {
+    return false;
+  }
+
+  ledExpanderRuntimeMode = LED_OUTPUT_VALIDATE_COLOR;
+  ledExpanderValidationChannel = -1;
+  ledExpanderValidationColor = color;
+  out.print("LED mode: VALIDATE_COLOR ");
+  out.println(ledExpanderOutputValidationColorName());
   return true;
 }
 
@@ -358,6 +419,11 @@ void ledExpanderOutputPrintRuntimeStatus(Stream &out) {
   if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
     out.print(" ch=");
     out.print(ledExpanderValidationChannel);
+  }
+
+  if (ledExpanderRuntimeMode == LED_OUTPUT_VALIDATE_COLOR) {
+    out.print(" color=");
+    out.print(ledExpanderOutputValidationColorName());
   }
 
   out.print(" allowed=");

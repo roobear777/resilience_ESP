@@ -26,7 +26,14 @@ enum LedOutputMode {
   LED_OUTPUT_OFF,
   LED_OUTPUT_VALIDATE_SOLID,
   LED_OUTPUT_VALIDATE_CHANNEL,
+  LED_OUTPUT_VALIDATE_COLOR,
   LED_OUTPUT_ANIMATION
+};
+
+enum LedValidationColor {
+  LED_VALIDATION_COLOR_RED,
+  LED_VALIDATION_COLOR_GREEN,
+  LED_VALIDATION_COLOR_BLUE
 };
 
 void ledExpanderOutputBegin();
@@ -42,9 +49,12 @@ uint32_t ledExpanderOutputPlannedBaudRate();
 int ledExpanderOutputPlannedTxPin();
 LedOutputMode ledExpanderOutputMode();
 int ledExpanderOutputValidationChannel();
+LedValidationColor ledExpanderOutputValidationColor();
 const char *ledExpanderOutputModeName();
+const char *ledExpanderOutputValidationColorName();
 bool ledExpanderOutputSetMode(LedOutputMode mode, Stream &out);
 bool ledExpanderOutputSetChannelValidationMode(uint8_t channelId, Stream &out);
+bool ledExpanderOutputSetColorValidationMode(LedValidationColor color, Stream &out);
 void ledExpanderOutputPrintRuntimeStatus(Stream &out);
 uint16_t ledExpanderOutputChannelPixelCount(uint8_t channelId);
 uint16_t ledExpanderOutputChannelLogicalStart(uint8_t channelId);

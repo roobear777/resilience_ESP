@@ -48,6 +48,20 @@ const uint16_t LED_ZONE_END[LED_LOGICAL_ZONE_COUNT] = {
   2007
 };
 
+inline bool ledLayoutZoneForPixel(uint16_t logicalPixelIndex, uint8_t &zoneIndex) {
+  for (uint8_t i = 0; i < LED_LOGICAL_ZONE_COUNT; i++) {
+    if (
+      logicalPixelIndex >= LED_ZONE_START[i]
+      && logicalPixelIndex <= LED_ZONE_END[i]
+    ) {
+      zoneIndex = i;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const uint8_t LED_OUTPUT_EXPANDER_CHANNEL_COUNT = 8;
 
 // Physical Output Expander order differs from PixelBlaze logical render order.

@@ -11,11 +11,17 @@ For current Tardi ESP32 integration status and handoff notes, see `docs/esp32_le
 ## Current hardware
 
 - Standard Pixelblaze Output Expander v3.0, not Pro.
+- Confirmed target hardware: ElectroMage Pixelblaze Output Expander v3.0, matching Zael's photographed board labelled `electromage.com Output Expander v3.0 @2021 Ben Hencke` and the current ElectroMage product page:
+  https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
 - 8 output channels, numbered 0–7.
 - Input side has `GND / DAT / CLK / 5V`.
 - Address jumpers are `JP1 / JP2 / JP3`.
-- Current evidence indicates the standard expander supports the needed 300–400 RGB pixel zones.
-- Pro is not required for pixel count.
+- Use the current ElectroMage product page as the hardware capacity reference for this project. Some searches may surface older Output Expander README/version information with lower per-channel pixel limits; that older limit does not apply to the board currently planned for Tardi.
+- Older references that mention lower limits such as 240 pixels/channel should not be used as the capacity reference unless they clearly apply to a different board/version being tested.
+- Relevant confirmed capacity: up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output.
+- The current largest planned Tardi channel is Ch3 / Z3 midbody at 400 pixels, so the planned channel lengths are within the documented capacity.
+- Pro is not required solely because of the 300–400 pixel channel lengths.
+- Physical wiring, colour order, grounding, and real LED behaviour still require California validation.
 
 ## Current architecture assumption
 
@@ -52,6 +58,8 @@ Notes:
 - No level shifter is expected between ESP32-S3 UART TX and expander `DAT`.
 - ESP32 TX-only is expected to be sufficient; expander RX back to ESP32 is not required for the basic protocol.
 - Shared ground is required.
+- Current planned Tardi wiring is ESP32 GPIO39 TX -> expander `DAT`.
+- GPIO39 is JTAG-related, so reset/default-state behaviour still needs California validation. Firmware holds GPIO39 at UART-idle HIGH after setup begins, but cannot control the pre-firmware reset / bootloader / JTAG window.
 
 ## Power notes
 
@@ -107,8 +115,8 @@ Keep as current:
 - Standard Output Expander v3.0.
 - ESP32-S3 drives expander over UART.
 - Output map listed above.
-- 300–400 pixel channels are acceptable for planning.
-- Pro is only relevant if the installation needs fused power distribution.
+- 300–400 pixel channels are within the current ElectroMage product-page capacity for the confirmed target board.
+- Pro is only relevant if the installation needs fused power distribution or another Pro-specific hardware feature.
 
 Treat as old or secondary:
 

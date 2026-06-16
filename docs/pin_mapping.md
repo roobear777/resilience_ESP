@@ -549,12 +549,14 @@ which ESP32-S3 UART peripheral will be used
 whether UART RX is needed
 whether any enable/sync/control pin is needed
 which ground/reference connection is required
-whether GPIO39 is still free from conflicts with USB Serial, OLED, buttons, FIRE outputs, or boot strapping pins
+whether GPIO39 behaves cleanly as 2 Mbps UART TX during real Output Expander validation
 ```
 
 Do not use board-labelled TX/RX / UART0 for the Output Expander.
 Do not use GPIO16 because it is Button 6.
 Do not use PBDriverAdapter's old default ESP32 TX GPIO23 for Tardi real output.
+
+GPIO39 remains the planned Output Expander TX. External sanity check found it plausible for ESP32-S3 UART TX, but it is JTAG-related and its reset/default-state behaviour needs California validation. Firmware sets GPIO39 to UART-idle HIGH after setup begins, but cannot control the pre-firmware reset / bootloader / JTAG window.
 
 Do not reuse these already assigned project pins for the Output Expander unless the pin map is deliberately revised:
 
@@ -589,15 +591,15 @@ These GPIOs passed the same LOW/HIGH input mapping test, but are not currently a
 | GPIO | Current status | Notes |
 |---:|---|---|
 | GPIO3 | bench-tested OK / caution | Strapping-related caution; leave unassigned unless deliberately needed |
-| GPIO19 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO20 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO35 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO36 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO37 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO38 | bench-tested OK / caution | Leave unassigned for now |
-| GPIO39 | bench-tested OK / planned LED UART TX | Planned Pixelblaze Output Expander UART TX |
-| GPIO40 | bench-tested OK / available candidate | Possible future LED UART / diagnostic pin |
-| GPIO41 | bench-tested OK / available candidate | Possible future LED UART / diagnostic pin |
+| GPIO19 | bench-tested OK / caution | Avoid for Output Expander TX because of USB-related caveats |
+| GPIO20 | bench-tested OK / caution | Avoid for Output Expander TX because of USB-related caveats |
+| GPIO35 | bench-tested OK / caution | Avoid for N8R8/octal PSRAM board path |
+| GPIO36 | bench-tested OK / caution | Avoid for N8R8/octal PSRAM board path |
+| GPIO37 | bench-tested OK / caution | Avoid for N8R8/octal PSRAM board path |
+| GPIO38 | bench-tested OK / caution | Only investigate as Output Expander TX fallback if GPIO39 issue appears JTAG-related |
+| GPIO39 | bench-tested OK / planned LED UART TX | Planned Pixelblaze Output Expander UART TX; JTAG-related caveat requires physical validation |
+| GPIO40 | bench-tested OK / available candidate | First fallback if GPIO39 physically fails |
+| GPIO41 | bench-tested OK / available candidate | Second fallback if GPIO39 physically fails |
 | GPIO45 | bench-tested OK / caution | Strapping-related caution; leave unassigned unless deliberately needed |
 | GPIO46 | bench-tested OK / caution | Strapping-related caution; leave unassigned unless deliberately needed |
 
@@ -609,6 +611,8 @@ Other candidates to keep available for diagnostics or fallback only:
 
 GPIO40
 GPIO41
+
+GPIO38 is only a later investigate-if-needed fallback if GPIO39 appears to fail specifically because of JTAG-related behaviour. Do not suggest GPIO14, GPIO16, or GPIO17 as Output Expander TX fallbacks because they are already assigned to FIRE7, Button 6, and Button 7.
 
 Caution pool:
 
