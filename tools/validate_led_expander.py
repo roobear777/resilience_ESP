@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import re
 import sys
 import time
 from pathlib import Path
 
 SCRIPT_NAME = "validate_led_expander.py"
-SCRIPT_VERSION = "1.2"
+SCRIPT_VERSION = "1.3"
 USB_SERIAL_BAUD = 115200
 LOG_DIR = Path("validation_logs")
 
@@ -149,9 +150,70 @@ def is_concise_summary_line(line: str) -> bool:
     )
 
 
+def parse_key_values(line: str) -> dict[str, str]:
+    return dict(re.findall(r"([A-Za-z]+)=([^ \r\n]+)", line))
+
+
+def find_last_line(response: str, prefix: str) -> str:
+    matches = [line.strip() for line in response.splitlines() if line.strip().startswith(prefix)]
+    return matches[-1] if matches else ""
+
+
+def yes_no_text(value: str) -> str:
+    if value == "1":
+        return "yes"
+    if value == "0":
+        return "no"
+    return "unknown"
+
+
+def print_status_summary(response: str) -> bool:
+    exp_real_line = find_last_line(response, "EXP REAL ")
+    exp_sim_line = find_last_line(response, "EXP SIM ")
+
+    if not exp_real_line and not exp_sim_line:
+        return False
+
+    real = parse_key_values(exp_real_line)
+    sim = parse_key_values(exp_sim_line)
+    sim_state = "UNKNOWN"
+    if exp_sim_line.startswith("EXP SIM OK"):
+        sim_state = "OK"
+    elif exp_sim_line.startswith("EXP SIM FAIL"):
+        sim_state = "FAIL"
+
+    print("Initial status summary:")
+    if real:
+        print(f"  Real output allowed: {yes_no_text(real.get('allowed', '?'))}")
+        print(f"  Real output started: {yes_no_text(real.get('started', '?'))}")
+        print(f"  TX pin: GPIO{real.get('tx', '?')}")
+        print(f"  Output Expander baud: {real.get('baud', '?')}")
+    else:
+        print("  Real output status: not found")
+
+    if sim:
+        print(
+            "  Simulator: "
+            f"{sim_state}, "
+            f"{sim.get('channels', '?')} channels, "
+            f"{sim.get('pixels', '?')} pixels, "
+            f"{sim.get('failed', '?')} failed"
+        )
+    else:
+        print("  Simulator: not found")
+
+    return True
+
+
 def print_command_response_summary(command: str, response: str) -> None:
     lines = response.splitlines()
     background_count = sum(1 for line in lines if is_background_diagnostic_line(line))
+
+    if command == "led status" and print_status_summary(response):
+        if background_count:
+            print(f"({background_count} repeated button/FIRE diagnostic line(s) hidden here; full raw Serial is in the log.)")
+        return
+
     summary_lines = [line for line in lines if is_concise_summary_line(line)]
 
     if summary_lines:
@@ -162,8 +224,10 @@ def print_command_response_summary(command: str, response: str) -> None:
         visible_lines = [line for line in lines if line.strip() and not is_background_diagnostic_line(line)]
         if visible_lines:
             print(f"Output after '{command}' follows:")
-            for line in visible_lines:
+            for line in visible_lines[:8]:
                 print(line)
+            if len(visible_lines) > 8:
+                print(f"... {len(visible_lines) - 8} more line(s) hidden here; full raw Serial is in the log.")
         else:
             print(f"(no command-specific response found after '{command}')")
 
@@ -373,6 +437,8 @@ def main() -> int:
             exit_code = 0 if ok else 1
     except serial.SerialException as exc:
         print(f"Serial error: {exc}")
+        if "resource busy" in str(exc).lower():
+            print("Close Arduino Serial Monitor / Serial Plotter, then run this script again.")
         log.add(f"FINAL RESULT: SERIAL ERROR - {exc}")
     except KeyboardInterrupt:
         print()

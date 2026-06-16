@@ -35,16 +35,17 @@ This Python package is only for the Mac script talking to the ESP32 over USB Ser
 1. Get the latest validation code.
 2. Upload the California validation firmware to the ESP32.
 3. Connect the ESP32, Output Expander, and LED setup.
-4. Run the guided Terminal script:
+4. Close Arduino Serial Monitor and Serial Plotter. The Arduino IDE itself may stay open.
+5. Run the guided Terminal script:
 
    ```sh
    cd ~/Documents/tardi-controller
    python3 tools/validate_led_expander.py
    ```
 
-5. Follow the prompts.
-6. If a step fails, stop.
-7. Send the newest `.txt` log from `validation_logs/` back to Roopert.
+6. Follow the prompts.
+7. If a step fails, stop.
+8. Send the newest `.txt` log from `validation_logs/` back to Roopert.
 
 If Zael already knows the ESP32 USB Serial port, pass it explicitly:
 
@@ -100,6 +101,8 @@ The guided script first asks Zael to reset or power-cycle the ESP32 while the Ou
 India USB-only dry run:
 
 - if no Output Expander and no real LED strings are connected, answer `n` to the flicker question.
+- this only tests the Python / USB Serial / safety flow.
+- it does not prove GPIO39 electrical output, 2M UART timing, Output Expander response, real LEDs, colour order, or channel mapping.
 
 Expected:
 
@@ -223,7 +226,9 @@ Record:
 
 The guided script is preferred.
 
-Before running it, close Arduino Serial Monitor and Serial Plotter.
+Before running it, close Arduino Serial Monitor and Serial Plotter. The Arduino IDE itself may stay open.
+
+Only one program can use the ESP32 USB Serial port at a time. If the script reports `Resource busy`, close Serial Monitor / Serial Plotter and retry.
 
 Run:
 

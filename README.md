@@ -10,8 +10,10 @@ docs/interaction_logic.md
 docs/pin_mapping.md
 docs/test_plan.md
 docs/esp32_led_port_status.md
-VALIDATION_README.md
+[California LED Output Expander Validation](VALIDATION_README.md)
 firmware/esp32_controller/esp32_controller.ino
+
+Arduino Serial Monitor is useful for manual setup checks, but close Serial Monitor / Serial Plotter before running the Python validation script. Only one program can use the ESP32 USB Serial port at a time.
 
 
 ## ESP32-S3 First Setup and UPLOAD, and UPLOAD thereafter (theres a difference)
