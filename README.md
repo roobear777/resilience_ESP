@@ -22,6 +22,9 @@ Controller board:
 
 ESP32-S3-DevKitC-1-N8R8
 Module: ESP32-S3-WROOM-1
+Arduino IDE board option: ESP32S3 Dev Module
+
+Do not pick `ESP32S3 Dev Module Octal (WROOM2)` for the current controller board.
 
 
 ## Setup
@@ -31,9 +34,11 @@ Module: ESP32-S3-WROOM-1
 3. In Arduino IDE, select:
 
 
+```text
 Board: ESP32S3 Dev Module
 Port: /dev/cu.usbserial-0001 (or correct port)
 Serial baud: 115200
+```
 
 
 
