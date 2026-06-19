@@ -1,9 +1,6 @@
 
 ## Start Here
 
-First read these files in order
-Second when ready to connect the ESP come back and read below:
-
 
 docs/current_baseline.md
 docs/interaction_logic.md
@@ -13,10 +10,9 @@ docs/esp32_led_port_status.md
 [California LED Output Expander Validation](VALIDATION_README.md)
 firmware/esp32_controller/esp32_controller.ino
 
-Arduino Serial Monitor is useful for manual setup checks, but close Serial Monitor / Serial Plotter before running the Python validation script. Only one program can use the ESP32 USB Serial port at a time.
 
 
-## ESP32-S3 First Setup and UPLOAD, and UPLOAD thereafter (theres a difference)
+## ESP32-S3 First Setup and UPLOAD
 
 Controller board:
 
@@ -24,7 +20,6 @@ ESP32-S3-DevKitC-1-N8R8
 Module: ESP32-S3-WROOM-1
 Arduino IDE board option: ESP32S3 Dev Module
 
-Do not pick `ESP32S3 Dev Module Octal (WROOM2)` for the current controller board.
 
 
 ## Setup
