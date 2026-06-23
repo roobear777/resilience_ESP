@@ -41,6 +41,7 @@ struct LedSettings {
   uint8_t ambientLevel;
   uint8_t activeLevel;
   uint8_t speedPercent;
+  uint16_t animationDurationSeconds;
   LedPaletteMode paletteMode;
   LedBehaviorMode behaviorMode;
   uint8_t zoneBrightness[LED_LOGICAL_ZONE_COUNT];
@@ -56,6 +57,7 @@ bool ledSettingsResetSavedToDefaults();
 const LedSettings& ledSettingsGet();
 LedSettings& ledSettingsMutable();
 uint8_t ledSettingsZoneBrightness(uint8_t zoneIndex);
+uint32_t ledSettingsAnimationDurationMs();
 uint16_t ledSettingsVersion();
 bool ledSettingsLoadedFromSaved();
 const LedLookSettings& ledSettingsGlobalLook(LedLookKind lookKind);

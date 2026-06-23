@@ -173,6 +173,8 @@ static String webSetupJsonStatus() {
   json += String(webSetupByteToPercent(settings.activeLevel));
   json += ",\"speed\":";
   json += String(settings.speedPercent);
+  json += ",\"animationDurationSeconds\":";
+  json += String(settings.animationDurationSeconds);
   json += ",\"palette\":\"";
   json += ledSettingsPaletteName(settings.paletteMode);
   json += "\",\"behavior\":\"";
@@ -251,6 +253,11 @@ static String webSetupHtmlPage() {
   html += F("%</strong></label><input id=\"speed\" type=\"range\" min=\"0\" max=\"200\" value=\"");
   html += String(initialLook.speedPercent);
   html += F("\" oninput=\"queueSetting('speed',this.value)\" onchange=\"sendSetting('speed',this.value)\"></div>");
+  html += F("<div class=\"ctrl\"><label><span>Animation duration</span><strong id=\"animationDurationSecondsValue\">");
+  html += String(ledSettingsGet().animationDurationSeconds);
+  html += F(" seconds</strong></label><input id=\"animationDurationSeconds\" type=\"range\" min=\"1\" max=\"60\" value=\"");
+  html += String(ledSettingsGet().animationDurationSeconds);
+  html += F("\" oninput=\"queueGlobalSetting('animationDurationSeconds',this.value)\" onchange=\"sendGlobalSetting('animationDurationSeconds',this.value)\"></div>");
   html += F("<div class=\"ctrl\"><label><span>Colour Palette</span><strong id=\"paletteValue\">");
   html += ledSettingsPaletteName(initialLook.paletteMode);
   html += F("</strong></label><select id=\"palette\" onchange=\"sendSetting('palette',this.value)\">");
@@ -294,7 +301,7 @@ static String webSetupHtmlPage() {
   html += F("<p><span class=\"cmd\">led defaults save</span></p>");
   html += F("</section><script>");
   html += F("let timers={},lastStatus=null;function msg(t){document.getElementById('message').textContent=t||'';}");
-  html += F("function label(k,v){if(k.endsWith('Percent')||k=='speed')return v+'%';return v;}function val(id,v){let e=document.getElementById(id+'Value');if(e)e.textContent=label(id,v);}");
+  html += F("function label(k,v){if(k=='animationDurationSeconds')return v+' seconds';if(k.endsWith('Percent')||k=='speed')return v+'%';return v;}function val(id,v){let e=document.getElementById(id+'Value');if(e)e.textContent=label(id,v);}");
   html += F("function post(u){return fetch(u,{method:'POST'}).then(r=>r.text()).then(t=>{msg(t);refresh();return t;}).catch(e=>msg('Request failed'));}");
   html += F("function targetQuery(){return 'look='+encodeURIComponent(document.getElementById('lookKind').value)+'&area='+encodeURIComponent(document.getElementById('lookArea').value);}");
   html += F("function selectedLook(s){let k=document.getElementById('lookKind').value,a=document.getElementById('lookArea').value,g=s.settings.looks[k];return a=='whole'?g.whole:g.zones[Number(a)];}");
@@ -302,9 +309,11 @@ static String webSetupHtmlPage() {
   html += F("function selectLookTarget(){if(lastStatus)applyLookControls(selectedLook(lastStatus));}");
   html += F("function queueSetting(k,v){val(k,v);let q=targetQuery();clearTimeout(timers[k]);timers[k]=setTimeout(()=>sendSetting(k,v,q),250);}");
   html += F("function sendSetting(k,v,q){val(k,v);return post('/api/settings?'+(q||targetQuery())+'&'+encodeURIComponent(k)+'='+encodeURIComponent(v));}");
+  html += F("function queueGlobalSetting(k,v){val(k,v);clearTimeout(timers[k]);timers[k]=setTimeout(()=>sendGlobalSetting(k,v),250);}");
+  html += F("function sendGlobalSetting(k,v){val(k,v);return post('/api/settings?'+encodeURIComponent(k)+'='+encodeURIComponent(v));}");
   html += F("function saveSettings(){return fetch('/api/save',{method:'POST'}).then(r=>r.text()).then(t=>{msg(t=='Saved'?'Saved':t);refresh();return t;}).catch(e=>msg('Request failed'));}");
   html += F("function resetDefaults(){return post('/api/reset-defaults').then(refresh);}");
-  html += F("function applyStatus(s){lastStatus=s;document.getElementById('liveOutput').textContent=s.liveOutput;document.getElementById('mode').textContent=s.mode;document.getElementById('started').textContent=s.realOutputStarted?'YES':'NO';applyLookControls(selectedLook(s));}");
+  html += F("function applyStatus(s){lastStatus=s;document.getElementById('liveOutput').textContent=s.liveOutput;document.getElementById('mode').textContent=s.mode;document.getElementById('started').textContent=s.realOutputStarted?'YES':'NO';document.getElementById('animationDurationSeconds').value=s.settings.animationDurationSeconds;val('animationDurationSeconds',s.settings.animationDurationSeconds);applyLookControls(selectedLook(s));}");
   html += F("function refresh(){return fetch('/api/status').then(r=>r.json()).then(applyStatus).catch(e=>{});}refresh();setInterval(refresh,5000);");
   html += F("</script>");
   html += F("</main></body></html>");
@@ -424,6 +433,18 @@ static void webSetupHandleSettings() {
     } else {
       settings.speedPercent = speed;
     }
+    handled = true;
+  }
+
+  if (webSetupServer.hasArg("animationDurationSeconds")) {
+    uint8_t seconds = 0;
+
+    if (!webSetupParseBoundedByteValue(webSetupServer.arg("animationDurationSeconds"), 1, 60, seconds)) {
+      webSetupServer.send(400, "text/plain", "Invalid animationDurationSeconds. Use 1..60.");
+      return;
+    }
+
+    settings.animationDurationSeconds = seconds;
     handled = true;
   }
 

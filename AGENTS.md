@@ -1,139 +1,143 @@
-# Tardi Controller working rules
+# Tardi Controller Working Rules
 
-## Critical safety baseline
+## Critical Safety Rules
 
-The existing ESP32-S3 FIRE/button bench tests have already passed.
+Do not change casually:
 
-Do not change:
-- FIRE GPIO logic
-- FIRE polarity
+- FIRE GPIO pins
+- FIRE active-LOW polarity
 - button pins
 - OLED pins
 - Big Poof cutoff behaviour
+- LED Output Expander channel mapping
+- Output Expander UART TX pin / baud
 
 FIRE outputs are active-LOW:
-- initialize HIGH
-- pulse LOW to fire
-- return HIGH to stop
 
-## PixelBlaze reference rules
+```text
+idle      = HIGH
+triggered = LOW
+return    = HIGH
+```
 
-The folder `reference_only/pixelblaze/` is reference-only.
+Normal FIRE1-FIRE8 pulse duration is 500 ms.
 
-Do not modify anything inside:
-- `reference_only/`
+Big Poof / FIRE9 is Button 1 + Button 8 and retains the 10-second FIRE cutoff.
 
-Do not copy PixelBlaze GPIO numbers into ESP32 firmware.
-Do not port PixelBlaze fire/poofer logic.
-Do not port PixelBlaze fire polarity.
-Do not port generated `dist/` code.
-Do not port archived old pattern files.
+## Current Live Build State
 
-Use the PixelBlaze source only to understand LED layout, animation structure, and per-zone behaviour.
+The checked firmware is currently a live hardware build.
 
-## Desired LED architecture
+Expected live settings:
 
-Recreate the PixelBlaze LED engine structure conceptually in ESP32/C++.
+```cpp
+ENABLE_REAL_PB_EXPANDER_OUTPUT = true
+FIRE_OUTPUTS_ENABLED = true
+USE_INTERNAL_PULLDOWNS = false
+```
 
-Do not build one massive `.ino`.
+Ambient LED animation starts automatically after boot through the Output Expander path.
 
-Keep `firmware/esp32_controller/esp32_controller.ino` as the existing controller coordinator.
+The web controller AP is available while powered.
 
-Add LED code as compartmentalised files beside the sketch, using names that map clearly to the PixelBlaze source:
+Do not switch between live hardware and simulator/development behavior unless the task explicitly asks for it.
 
-- `led_config.h`
-- `led_layout.h`
-- `led_animations.h/.cpp`
-- `led_state.h/.cpp`
-- `led_engine.h/.cpp`
-- later zone files matching PixelBlaze zones:
-  - `led_z1_mouth.h/.cpp`
-  - `led_z2_shoulder.h/.cpp`
-  - `led_z3_midbody.h/.cpp`
-  - `led_z4_rear.h/.cpp`
-  - `led_legs.h/.cpp`
-  - `led_z7_digestive.h/.cpp`
-  - `led_z8_stations.h/.cpp`
+## Pin / Hardware Rules
+
+Button inputs are active-HIGH:
+
+```text
+released = LOW
+pressed  = HIGH / 3.3V
+```
+
+Live wiring uses external 10k pulldowns.
+
+Output Expander UART:
+
+```text
+TX pin = GPIO39
+baud   = 2000000
+```
+
+Do not use board-labelled TX/RX / UART0 for the Output Expander.
+Do not use GPIO16 for Output Expander TX; it is Button 6.
+Do not use PBDriverAdapter's old default ESP32 TX GPIO23 for Tardi real output.
+
+## PixelBlaze Reference Rules
+
+`reference_only/` is read-only.
+
+Do not modify anything inside `reference_only/`.
+
+Do not copy PixelBlaze GPIO numbers, FIRE logic, FIRE polarity, generated `dist/` code, or archived old pattern files into ESP32 firmware.
+
+Use PixelBlaze source only for LED layout, animation structure, and per-zone behavior.
+
+## LED Architecture Rules
+
+Keep `firmware/esp32_controller/esp32_controller.ino` as the controller coordinator.
 
 The LED engine must not read physical buttons directly.
 The LED engine must not touch FIRE pins.
 
-Existing controller logic owns:
+Controller logic owns:
+
 - button debounce
 - accepted button/FIRE triggers
 - FIRE outputs
 - Big Poof logic
 - safety cutoffs
 - OLED diagnostics
-- serial logging
+- Serial logging
 
-## ESP32 LED active-state model
-
-Do not copy the PixelBlaze held-button model:
-
-```text
-zoneActive = buttonHeld && !latched
-```
-
-Use the ESP32 controller trigger-window model instead:
+LED active state uses accepted trigger windows:
 
 ```text
 zoneActive = now < ledActiveUntil[zone]
 ```
 
-LED active state should be driven from accepted controller events / active windows, not raw PixelBlaze button-held behaviour.
+Do not revert to PixelBlaze held-button active logic.
 
-## Pixelblaze Output Expander rules
+## Output Expander Rules
 
-The current physical LED output target is:
-
-```text
-ESP32-S3 -> UART -> Pixelblaze Output Expander -> LED zones
-```
-
-`PBDriverAdapter` is vendored locally under:
+`PBDriverAdapter` is vendored under:
 
 ```text
 firmware/esp32_controller/src/PBDriverAdapter/
 ```
 
-`PBDriverAdapter` has a Tardi local patch allowing a caller-selected ESP32 TX pin:
+Do not modify vendored PBDriverAdapter files unless explicitly requested.
+
+Tardi local patch:
 
 ```cpp
 void PBDriverAdapter::begin(uint32_t uartFrequency, int8_t txPin);
 ```
 
-Future real Output Expander UART settings:
-- baud = `2000000`
-- TX = `GPIO39`
-
-Do not use board-labelled TX/RX / UART0 for the Output Expander.
-Do not use GPIO16 because it is Button 6.
-Do not use PBDriverAdapter's old default ESP32 TX GPIO23 for Tardi real output.
-
-Real Output Expander output must remain disabled unless explicitly requested:
-
-```cpp
-ENABLE_REAL_PB_EXPANDER_OUTPUT = false
-```
-
-Codex must not flip this guard to true unless the task explicitly asks for California hardware validation.
-India-side work should remain compile-only, simulator-based, or diagnostics-only.
-Physical UART / expander / LED validation is California-side.
-
-## Output Expander simulator
-
-The Output Expander simulator is allowed and safe.
-
-Expected healthy India-side simulator status:
+The physical output path is:
 
 ```text
-EXP REAL allowed=0 started=0 tx=39 baud=2000000
-EXP SIM OK channels=8 pixels=2008 failed=0 ... byteOrder=GRB
+ESP32-S3 -> UART GPIO39 -> Pixelblaze Output Expander -> LED zones
 ```
 
-The checksum varies with animation time/state and is not a fixed universal value.
+Current physical colour metadata is RGB:
 
+```text
+redi   = 0
+greeni = 1
+bluei  = 2
+```
+
+## Editing Rules
+
+Do not modify `reference_only/`.
+
+Do not add FastLED, NeoPixelBus, or Adafruit NeoPixel.
+
+Do not change FIRE/button/OLED behavior while working on LED rendering or web UI unless explicitly requested.
+
+Prefer small targeted edits that preserve existing behavior.
 
 ## vexp <!-- vexp v2.0.25 -->
 
@@ -141,25 +145,17 @@ The checksum varies with animation time/state and is not a fixed universal value
 vexp returns pre-indexed, graph-ranked context in a single call.
 
 ### Workflow
-1. `run_pipeline` with your task description - ALWAYS FIRST (replaces all other tools)
+1. `run_pipeline` with your task description - ALWAYS FIRST
 2. Make targeted changes based on the context returned
 3. `run_pipeline` again only if you need more context
 
 ### Available MCP tools
-- `run_pipeline` - **PRIMARY TOOL**. Runs capsule + impact + memory in 1 call.
-  Auto-detects intent. Includes file content. Example: `run_pipeline({ "task": "fix auth bug" })`
+- `run_pipeline` - primary context and impact tool
 - `get_skeleton` - compact file structure
 - `index_status` - indexing status
-- `expand_vexp_ref` - expand V-REF placeholders in v2 output
 
 ### Agentic search
-- Do NOT use built-in file search, grep, or codebase indexing - always call `run_pipeline` first
+- Do not use built-in file search, grep, or codebase indexing before `run_pipeline`
 - If you spawn sub-agents or background tasks, pass them the context from `run_pipeline`
-  rather than letting them search the codebase independently
 
-### Smart Features
-Intent auto-detection, hybrid ranking, session memory, auto-expanding budget.
-
-### Multi-Repo
-`run_pipeline` auto-queries all indexed repos. Use `repos: ["alias"]` to scope. Run `index_status` to see aliases.
 <!-- /vexp -->

@@ -1,95 +1,104 @@
+# Tardi Controller
 
-## Start Here
+ESP32-S3 firmware for the Tardi sculpture controller.
 
+This repo currently builds the live sculpture firmware:
 
-[California LED Output Expander Validation](VALIDATION_README.md)
+- FIRE outputs are enabled.
+- Real LED output through the Pixelblaze Output Expander is enabled.
+- Ambient LEDs start automatically after boot.
+- The `TARDI-LED` Wi-Fi controller is available while powered.
+- FIRE outputs still use the 500 ms pulse and Big Poof cutoff safeguards.
 
+## Upload
 
+Use Arduino IDE with:
 
-## ESP32-S3 First Setup and UPLOAD
-
-Controller board:
-
-ESP32-S3-DevKitC-1-N8R8
+```text
+Board: ESP32-S3-DevKitC-1-N8R8
 Module: ESP32-S3-WROOM-1
-Arduino IDE board option: ESP32S3 Dev Module
+Board option: ESP32S3 Dev Module
+USB Serial baud: 115200
+```
 
-
-
-## Setup
-
-1. Download and install Arduino IDE.
-2. Connect the ESP32-S3 using the **left USB-C port** and a data-capable USB cable.
-3. In Arduino IDE, select:
-
+Required Arduino libraries:
 
 ```text
-Board: ESP32S3 Dev Module
-Port: /dev/cu.usbserial-0001 (or correct port)
-Serial baud: 115200
+Adafruit SSD1306
+Adafruit GFX Library
 ```
 
+Use the Arduino IDE Upload arrow normally. Holding BOOT or pressing RESET is not routine; use BOOT/RESET only if upload stalls at `Connecting...`.
 
+## Web Controller
 
-
-## First time connection only
-
-1. Plug in using the **left USB-C port**.
-2. Open Arduino IDE.
-3. Open: File → Examples → 01.Basics → Blink
-4. Replace the Blink sketch with the serial test sketch BELOW.
-5. Press and hold **BOOT**.
-6. While holding **BOOT**, click the **Upload** arrow.
-7. Keep holding **BOOT** until Arduino starts writing to the board.
-8. Release **BOOT** once writing begins.
-9. Wait for upload to complete.
-10. Press **RESET** once.
-11. Open **Serial Monitor**.
-12. Set baud rate to `115200`.
-13. Confirm serial output shows `ESP32-S3 is alive` and repeated `tick` messages.
-
-## Uploading AFTER first setup
-
-1. Click the Arduino IDE **Upload** arrow.
-2. Wait for Arduino output to show:
+The ESP32 starts its Wi-Fi controller automatically:
 
 ```text
-Connecting...
+Wi-Fi:    TARDI-LED
+Password: tardigrade
+Open:     http://192.168.4.1
 ```
 
-3. Press and hold **BOOT**.
-4. Release **BOOT** once writing begins.
-5. Wait for upload to complete.
-6. Sometimes you have to press  **RESET** if serial not showing
-7. Open **Serial Monitor** at `115200` if serial output needs checking.
+The web page controls LED look only: brightness, colour intensity, speed, palette, behaviour, ambient/animation target, whole/zone target, and animation duration.
 
-## Serial test sketch
+Press `SAVE` to persist changes. `RESET` restores defaults in RAM until saved.
 
-Use this instead of the default Blink code.
+The web page does not control FIRE outputs.
 
-Default Blink sketch may not work because onboard LED pin is different on this board.
+## Normal Operation
 
-```cpp
-void setup() {
-  Serial.begin(115200);
-  delay(1000);
+On boot:
 
-  Serial.println("ESP32-S3 is alive");
-}
+- ambient LED animation starts
+- FIRE outputs idle HIGH
+- buttons are ready
+- Wi-Fi controller is available
 
-void loop() {
-  Serial.println("tick");
-  delay(1000);
-}
-```
+Buttons 1-7 trigger their matching FIRE outputs and LED zones.
 
-## Expected Serial Monitor output after sketch upload, BOOT, and reset
+Button 8 triggers FIRE8, but does not directly start an independent LED zone.
+
+Button 1 + Button 8 triggers Big Poof / FIRE9 and activates all LED zones together.
+
+LED active windows use the saved global animation duration. Default is 10 seconds. When a zone's duration ends, it returns to ambient.
+
+Normal FIRE outputs pulse for 500 ms. Big Poof / FIRE9 has a 10-second FIRE safety cutoff. LED animation duration does not change either FIRE timing.
+
+## Essential Wiring Facts
+
+- Button inputs are active-HIGH and use external 10k pulldowns.
+- FIRE outputs are active-LOW: HIGH idle, LOW trigger.
+- Output Expander TX is GPIO39 at 2,000,000 baud.
+- ESP32 GPIO39 TX connects to Output Expander DAT.
+- ESP32 GND must connect to Output Expander GND.
+- Do not connect ESP32 GPIO pins to 5V logic.
+
+Detailed pin and channel maps live in `docs/`.
+
+## Optional Serial Checks
+
+USB Serial uses `115200`.
+
+Useful commands:
 
 ```text
-ESP32-S3 is alive
-tick
-tick
-tick
+led status
+led settings
+wifi status
 ```
 
-If this output appears, the ESP32-S3, USB cable, Arduino IDE, selected board, selected port, upload process, reset button, and Serial Monitor are working.
+Manual LED test commands still exist, but normal sculpture operation does not require typing `led animation`.
+
+## Docs
+
+- `docs/current_baseline.md` - current live-build baseline
+- `docs/gpio_schema.md` - GPIO table
+- `docs/pin_mapping.md` - pin rules and reservations
+- `docs/interaction_logic.md` - button, FIRE, LED, and Big Poof behaviour
+- `docs/esp32_led_port_status.md` - LED port status
+- `docs/led_output_expander.md` - Output Expander wiring/channel reference
+- `docs/led_animation_architecture.md` - LED render architecture
+- `docs/web_setup_interface.md` - web controller notes
+
+Historical working notes are in `docs/archive/`.

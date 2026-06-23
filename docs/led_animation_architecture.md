@@ -1,62 +1,120 @@
 # LED Animation Architecture
 
-The ESP32 now has a software-side logical render path for Z1-Z8 based on the
-Pixelblaze source structure. The remaining work is validation and tuning, not a
-fresh port of the zone render structure.
+The ESP32 firmware now contains the software-side LED render path for Z1-Z8. The Pixelblaze source is reference material only; it is not runtime code.
 
-Remaining validation caveats:
-- animation timing and feel still need visual validation
-- colour order still needs physical LED validation
-- real channel geometry still needs California Output Expander validation
+## Rendering Model
 
-## Rendering model
-- ESP32 owns animation logic.
-- Output Expander only outputs pixel data.
-- Pixelblaze code is used as animation reference, not runtime code.
+```text
+logical pixel index
+-> zone lookup
+-> zone renderer
+-> LedColor HSV
+-> LED settings scaling
+-> LedRgbColor RGB
+-> Output Expander callback
+```
 
-The animation layer should not call `FastLED.show()` or drive LED GPIOs directly when using the expander; it should pass RGB values to the Output Expander driver, currently expected to be `PBDriverAdapter`.
+The LED engine does not read physical buttons directly and does not touch FIRE pins. The controller owns accepted button/FIRE events and calls LED trigger helpers.
 
-Current ESP32 implementation renders logical pixels as HSV `LedColor`, converts to normal RGB, then packs GRB callback bytes for the Pixelblaze Output Expander path. The runtime simulator exercises this packed-pixel callback path without calling `PBDriverAdapter::show()`.
+## Ambient and Active State
 
-## Frame loop
-1. Read controller state.
-2. Update LED mode/timers.
-3. Render each zone pixel-by-pixel through `ledEngineRenderPixel(logicalPixelIndex, nowMs)`.
-4. Convert HSV to RGB and pack callback bytes as GRB.
-5. Future real output sends callback bytes through `PBDriverAdapter::show()`.
-6. Expander latches channels together.
+Ambient rendering is continuous for inactive zones.
 
-## LED modes
-- Idle
-- Local/single-button glow
-- Full peristaltic wave
-- Fade/cooldown
-- Zone 7 always-on digestive pulse
+Active rendering is controlled by trigger windows:
 
-## Zone render functions
-- One render function per biological zone.
-- Each function receives local pixel index, current time, and mode.
-- Each zone function returns internal HSV `LedColor`; output conversion happens after logical rendering.
+```text
+zoneActive = now < ledActiveUntil[zone]
+```
 
-## Pattern source material
-- Use old Pixelblaze patterns as references.
-- Port timing/math/geometry ideas into C++.
-- Do not depend on Pixelblaze web editor or JS runtime.
+Do not copy the Pixelblaze held-button model into ESP32 firmware.
 
-## Current wave timing
-- Include the t=0, 150, 300, etc. sequence.
+## Trigger Mapping
 
-## Current zone geometry
-- Zone 1: 208 LEDs
-- Zone 2: 325 LEDs
-- Zone 3: 400 LEDs
-- Zone 4: assume current mapping
-- Zone 5: 300 LEDs
-- Zone 6: 300 LEDs
-- Zone 7: 75 logical pixels until confirmed
+```text
+Button 1 -> Z1 / Mouth
+Button 2 -> Z2 / Shoulder
+Button 3 -> Z3 / Midbody
+Button 4 -> Z4 / Rear
+Button 5 -> Z5 / Front legs
+Button 6 -> Z6 / Back legs
+Button 7 -> Z7 / Digestive
+```
 
-## What not to import wholesale
-- Pixelblaze UI sliders
-- Pixelblaze-specific export syntax
-- Pixelblaze GPIO/fire logic
-- Old snippets that conflict with current mapping
+Button 8 alone does not trigger an independent LED zone.
+
+Z8 is the button-station LED zone. It mirrors/summarizes the Z1-Z7 station states and is also activated by the synchronized all-zone Big Poof LED event.
+
+## Animation Duration
+
+Normal zone triggers and Big Poof all-zone LED animation use the same saved global animation duration.
+
+Default:
+
+```text
+10 seconds
+```
+
+After the duration expires, zones return to ambient rendering.
+
+This LED duration does not change the 500 ms FIRE pulse or the 10 second Big Poof FIRE cutoff.
+
+## LED Settings
+
+Current saved LED settings include:
+
+- master brightness
+- colour intensity / saturation
+- speed
+- palette
+- behaviour
+- ambient level
+- active level
+- per-zone values
+- global animation duration
+
+The web controller can edit these settings. Live changes apply in RAM; `SAVE` persists them.
+
+## Logical Layout
+
+| Zone | Physical LEDs | Pixels | Logical start |
+|---|---|---:|---:|
+| Z1 | Mouth LEDs | 208 | 0 |
+| Z2 | Shoulder LEDs | 325 | 208 |
+| Z3 | Midbody LEDs | 400 | 533 |
+| Z4 | Rear LEDs | 300 | 933 |
+| Z5 | Front leg LEDs | 300 | 1233 |
+| Z6 | Back leg LEDs | 300 | 1533 |
+| Z7 | Digestive LEDs | 75 | 1833 |
+| Z8 | Button station LEDs | 100 | 1908 |
+
+Total logical pixels:
+
+```text
+2008
+```
+
+## Output
+
+The live output path uses:
+
+```text
+ESP32-S3 -> PBDriverAdapter -> Pixelblaze Output Expander -> LED channels
+```
+
+Current PBChannel colour metadata is RGB:
+
+```text
+redi   = 0
+greeni = 1
+bluei  = 2
+```
+
+## Remaining Physical Checks
+
+These are hardware/deployment checks, not missing animation-architecture pieces:
+
+- final animation timing and feel on the sculpture
+- physical channel order
+- real LED colour appearance under sculpture power
+- power injection and grounding under load
+- Z7 physical wiring versus the current 75 logical-pixel model

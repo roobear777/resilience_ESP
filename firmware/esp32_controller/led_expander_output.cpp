@@ -13,8 +13,10 @@ constexpr uint32_t PB_EXPANDER_BAUD_RATE = 2000000;
 constexpr uint8_t PB_EXPANDER_CHANNEL_COUNT = 8;
 constexpr uint32_t PB_EXPANDER_WS2812_FREQUENCY = 800000;
 
-// California hardware validation build. Set false for India/no-expander testing.
+// Live hardware build. Set false only for simulator/development builds without expander hardware.
 constexpr bool ENABLE_REAL_PB_EXPANDER_OUTPUT = true;
+constexpr LedOutputMode DEFAULT_LED_OUTPUT_MODE =
+  ENABLE_REAL_PB_EXPANDER_OUTPUT ? LED_OUTPUT_ANIMATION : LED_OUTPUT_OFF;
 
 struct LedExpanderChannelConfig {
   uint8_t channelId;
@@ -97,7 +99,7 @@ static PBDriverAdapter ledExpanderDriver;
 static bool ledExpanderOutputEnabled = false;
 static bool ledExpanderOutputInitialized = false;
 static bool ledExpanderRealOutputStarted = false;
-static LedOutputMode ledExpanderRuntimeMode = LED_OUTPUT_OFF;
+static LedOutputMode ledExpanderRuntimeMode = DEFAULT_LED_OUTPUT_MODE;
 static int ledExpanderValidationChannel = -1;
 static LedValidationColor ledExpanderValidationColor = LED_VALIDATION_COLOR_RED;
 static uint8_t ledExpanderConfiguredChannelCount = 0;
@@ -210,8 +212,8 @@ void ledExpanderOutputBegin() {
     channel.channelId = config.channelId;
     channel.channelType = CHANNEL_WS2812;
     channel.numElements = 3;
-    channel.redi = 1;
-    channel.greeni = 0;
+    channel.redi = 0;
+    channel.greeni = 1;
     channel.bluei = 2;
     channel.whitei = 0;
     channel.pixels = config.pixels;
@@ -225,6 +227,11 @@ void ledExpanderOutputBegin() {
   ledExpanderConfiguredChannelCount = PB_EXPANDER_CHANNEL_COUNT;
   ledExpanderConfiguredPixelCount = configuredPixels;
   ledExpanderOutputInitialized = true;
+
+  if (ENABLE_REAL_PB_EXPANDER_OUTPUT && ledExpanderRuntimeMode != LED_OUTPUT_OFF) {
+    ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
+    ledExpanderRealOutputStarted = true;
+  }
 }
 
 static bool ledExpanderOutputStartRealOutputIfAllowed(Stream &out) {

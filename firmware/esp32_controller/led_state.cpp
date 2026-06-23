@@ -1,6 +1,7 @@
 #include "led_state.h"
 
 #include "led_config.h"
+#include "led_settings.h"
 
 static uint32_t ledActiveUntil[LED_LOGICAL_ZONE_COUNT] = { 0 };
 
@@ -13,7 +14,15 @@ void ledTriggerZone(uint8_t zoneIndex, uint32_t nowMs) {
     return;
   }
 
-  ledActiveUntil[zoneIndex] = nowMs + LED_ACTIVE_WINDOW_MS;
+  ledActiveUntil[zoneIndex] = nowMs + ledSettingsAnimationDurationMs();
+}
+
+void ledActivateAllZones(uint32_t nowMs) {
+  uint32_t activeUntil = nowMs + ledSettingsAnimationDurationMs();
+
+  for (uint8_t zoneIndex = 0; zoneIndex < LED_LOGICAL_ZONE_COUNT; zoneIndex++) {
+    ledActiveUntil[zoneIndex] = activeUntil;
+  }
 }
 
 bool ledIsZoneActive(uint8_t zoneIndex, uint32_t nowMs) {

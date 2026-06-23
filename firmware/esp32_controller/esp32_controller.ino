@@ -79,22 +79,21 @@ const unsigned long SERIAL_DEBUG_INTERVAL_MS = 100;
 const unsigned long OLED_UPDATE_INTERVAL_MS = 250;
 const unsigned long OLED_SETUP_PAGE_INTERVAL_MS = 4000;
 
-// India-safe simulated Output Expander diagnostics over USB Serial only.
-// This does not start Serial1 or send Pixelblaze Output Expander frames.
-const bool ENABLE_EXPANDER_SIM_SERIAL_DIAGNOSTICS = true;
+// Software Output Expander simulator diagnostics over USB Serial.
+// Keep disabled for the live build; helpers remain available for manual checks.
+const bool ENABLE_EXPANDER_SIM_SERIAL_DIAGNOSTICS = false;
 const unsigned long EXPANDER_SIM_SERIAL_DIAGNOSTIC_INTERVAL_MS = 5000;
 
-// false = keep FIRE GPIOs idle HIGH; Serial/OLED still show requested state
-// true  = allow FIRE GPIOs to drive the current bench LED outputs
-// Set false before connecting real relay/poofer hardware unless the hardware has been confirmed.
+// false = keep FIRE GPIOs idle HIGH; Serial/OLED still show requested state.
+// true  = allow FIRE GPIOs to drive the live active-LOW FIRE outputs.
 const bool FIRE_OUTPUTS_ENABLED = true;
 
 // ==================================================
 // INPUT PULLDOWN MODE
 // ==================================================
 //
-// true  = India bench testing with ESP32 internal pull-downs
-// false = California final hardware with external 10kΩ pull-downs
+// true  = use ESP32 internal pull-downs for development wiring.
+// false = use live hardware external 10k pull-downs.
 //
 // Logical behavior is unchanged:
 // LOW  = inactive
@@ -102,7 +101,7 @@ const bool FIRE_OUTPUTS_ENABLED = true;
 //
 // Preferred button wiring:
 // ESP32 3.3V -> button panel -> button return wire -> ESP32 GPIO input
-const bool USE_INTERNAL_PULLDOWNS = true;
+const bool USE_INTERNAL_PULLDOWNS = false;
 
 // GPIO40 was reserved for setup-mode experiments.
 // The Tardi web controller now starts automatically while powered.
@@ -142,8 +141,7 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
 // Current board:
 // ESP32-S3-DevKitC-1-N8R8
 //
-// Temporary bench-test pin map only.
-// Not final California wiring.
+// Current live-build pin map.
 //
 // Keep all raw GPIO numbers in this section.
 //
@@ -155,9 +153,9 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
 //
 
 // OLED is assigned to GPIO1/GPIO2.
-// LED Output Expander UART TX is planned for GPIO39.
-// Real Output Expander output remains guarded; the California validation build
-// allows it at compile time, but runtime LED mode still boots OFF.
+// LED Output Expander UART TX is GPIO39.
+// Real Output Expander output is enabled for the live build, and normal
+// animation mode starts automatically after boot.
 
 const int BUTTON_PINS[NUM_BUTTONS] = {
   4,  // Button 1
@@ -246,8 +244,8 @@ void loop() {
   processSerialLedCommands();
   readButtons();
   updateButtonDebounce();
-  updateInteractionLogic();
-  updateLedTriggers();
+  bool bigPoofStartedThisLoop = updateInteractionLogic();
+  updateLedTriggers(bigPoofStartedThisLoop);
   updateLedOutputs();
   updateFireOutputs();
   printSerialDebugIfDue();
@@ -328,12 +326,13 @@ void updateButtonDebounce() {
 // INTERACTION LOGIC
 // ==================================================
 
-void updateInteractionLogic() {
+bool updateInteractionLogic() {
   updateInteractionState();
   clearFireStates();
   updateNormalFireLogic();
-  updateBigPoofLogic();
+  bool bigPoofStartedThisLoop = updateBigPoofLogic();
   updateFirePulseStates();
+  return bigPoofStartedThisLoop;
 }
 
 void updateInteractionState() {
@@ -383,19 +382,22 @@ bool isBigPoofRequested() {
   return debouncedButtonState[0] && debouncedButtonState[7];
 }
 
-void updateBigPoofLogic() {
+bool updateBigPoofLogic() {
   bool bigPoofRequested = isBigPoofRequested();
 
   if (!bigPoofRequested) {
     bigPoofStartMs = 0;
     fireState[FIRE9_INDEX] = false;
-    return;
+    return false;
   }
 
   unsigned long now = millis();
+  bool bigPoofStartedThisLoop = false;
 
   if (bigPoofStartMs == 0) {
     bigPoofStartMs = now;
+    ledActivateAllZones(now);
+    bigPoofStartedThisLoop = true;
   }
 
   if ((now - bigPoofStartMs) < OUTPUT_CUTOFF_MS) {
@@ -403,6 +405,8 @@ void updateBigPoofLogic() {
   } else {
     fireState[FIRE9_INDEX] = false;
   }
+
+  return bigPoofStartedThisLoop;
 }
 
 // ==================================================
@@ -438,10 +442,10 @@ unsigned long getPulseDurationMs(int fireIndex) {
 // LED HOOKS
 // ==================================================
 
-void updateLedTriggers() {
+void updateLedTriggers(bool bigPoofStartedThisLoop) {
   unsigned long now = millis();
 
-  if (buttonPressEvent[0]) {
+  if (buttonPressEvent[0] && !bigPoofStartedThisLoop) {
     ledTriggerZone(LED_ZONE_Z1_MOUTH, now);
   }
 

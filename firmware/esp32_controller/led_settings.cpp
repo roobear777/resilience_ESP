@@ -11,6 +11,7 @@ static const char *LED_SETTINGS_KEY_SATURATION = "sat";
 static const char *LED_SETTINGS_KEY_AMBIENT = "ambient";
 static const char *LED_SETTINGS_KEY_ACTIVE = "active";
 static const char *LED_SETTINGS_KEY_SPEED = "speed";
+static const char *LED_SETTINGS_KEY_ANIMATION_DURATION = "animdur";
 static const char *LED_SETTINGS_KEY_PALETTE = "palette";
 static const char *LED_SETTINGS_KEY_BEHAVIOR = "behavior";
 
@@ -144,6 +145,10 @@ bool ledSettingsLoadSaved() {
   ledSettings.speedPercent = ledSettingsClampedByte(
     preferences.getUChar(LED_SETTINGS_KEY_SPEED, 100)
   );
+  ledSettings.animationDurationSeconds = preferences.getUShort(
+    LED_SETTINGS_KEY_ANIMATION_DURATION,
+    LED_ACTIVE_WINDOW_MS / 1000u
+  );
   ledSettings.paletteMode = static_cast<LedPaletteMode>(
     preferences.getUChar(LED_SETTINGS_KEY_PALETTE, LED_PALETTE_DEFAULT)
   );
@@ -157,6 +162,10 @@ bool ledSettingsLoadSaved() {
 
   if (ledSettings.behaviorMode > LED_BEHAVIOR_SPARKLE) {
     ledSettings.behaviorMode = LED_BEHAVIOR_NORMAL;
+  }
+
+  if (ledSettings.animationDurationSeconds < 1 || ledSettings.animationDurationSeconds > 60) {
+    ledSettings.animationDurationSeconds = LED_ACTIVE_WINDOW_MS / 1000u;
   }
 
   for (uint8_t i = 0; i < LED_LOGICAL_ZONE_COUNT; i++) {
@@ -194,6 +203,7 @@ bool ledSettingsSave() {
   ok = preferences.putUChar(LED_SETTINGS_KEY_AMBIENT, ledSettings.ambientLevel) == sizeof(uint8_t) && ok;
   ok = preferences.putUChar(LED_SETTINGS_KEY_ACTIVE, ledSettings.activeLevel) == sizeof(uint8_t) && ok;
   ok = preferences.putUChar(LED_SETTINGS_KEY_SPEED, ledSettings.speedPercent) == sizeof(uint8_t) && ok;
+  ok = preferences.putUShort(LED_SETTINGS_KEY_ANIMATION_DURATION, ledSettings.animationDurationSeconds) == sizeof(uint16_t) && ok;
   ok = preferences.putUChar(LED_SETTINGS_KEY_PALETTE, static_cast<uint8_t>(ledSettings.paletteMode)) == sizeof(uint8_t) && ok;
   ok = preferences.putUChar(LED_SETTINGS_KEY_BEHAVIOR, static_cast<uint8_t>(ledSettings.behaviorMode)) == sizeof(uint8_t) && ok;
 
@@ -222,6 +232,7 @@ void ledSettingsResetToDefaults() {
   ledSettings.ambientLevel = 255;
   ledSettings.activeLevel = 255;
   ledSettings.speedPercent = 100;
+  ledSettings.animationDurationSeconds = LED_ACTIVE_WINDOW_MS / 1000u;
   ledSettings.paletteMode = LED_PALETTE_DEFAULT;
   ledSettings.behaviorMode = LED_BEHAVIOR_NORMAL;
 
@@ -257,6 +268,10 @@ uint8_t ledSettingsZoneBrightness(uint8_t zoneIndex) {
   }
 
   return ledSettings.zoneBrightness[zoneIndex];
+}
+
+uint32_t ledSettingsAnimationDurationMs() {
+  return static_cast<uint32_t>(ledSettings.animationDurationSeconds) * 1000u;
 }
 
 uint16_t ledSettingsVersion() {
@@ -416,6 +431,9 @@ void ledSettingsPrint(Stream &out) {
   out.print(ledSettings.activeLevel);
   out.print(" speed=");
   out.print(ledSettings.speedPercent);
+  out.print(" animationDuration=");
+  out.print(ledSettings.animationDurationSeconds);
+  out.print("s");
   out.print(" palette=");
   out.print(ledSettingsPaletteName(ledSettings.paletteMode));
   out.print(" behavior=");

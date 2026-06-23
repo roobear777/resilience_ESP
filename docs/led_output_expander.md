@@ -1,175 +1,113 @@
 # LED Output Expander Notes
 
-## Purpose
+This document is the reference/README for the ESP32-S3 to Pixelblaze Output Expander LED output path. Animation structure belongs in `docs/led_animation_architecture.md`.
 
-This document is the reference/README for the ESP32-S3 -> Pixelblaze Output Expander -> LED zones architecture.
+## Hardware Reference
 
-It covers expander hardware, wiring, serial communication, output channel mapping, and bench tests. Animation logic belongs in `docs/led_animation_architecture.md`.
-
-For current Tardi ESP32 integration status and handoff notes, see `docs/esp32_led_port_status.md`.
-
-## Current hardware
-
-- Standard Pixelblaze Output Expander v3.0, not Pro.
-- Confirmed target hardware: ElectroMage Pixelblaze Output Expander v3.0, matching Zael's photographed board labelled `electromage.com Output Expander v3.0 @2021 Ben Hencke` and the current ElectroMage product page:
-  https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
-- 8 output channels, numbered 0–7.
-- Input side has `GND / DAT / CLK / 5V`.
-- Address jumpers are `JP1 / JP2 / JP3`.
-- Use the current ElectroMage product page as the hardware capacity reference for this project. Some searches may surface older Output Expander README/version information with lower per-channel pixel limits; that older limit does not apply to the board currently planned for Tardi.
-- Older references that mention lower limits such as 240 pixels/channel should not be used as the capacity reference unless they clearly apply to a different board/version being tested.
-- Relevant confirmed capacity: up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output.
-- The current largest planned Tardi channel is Ch3 / Z3 midbody at 400 pixels, so the planned channel lengths are within the documented capacity.
-- Pro is not required solely because of the 300–400 pixel channel lengths.
-- Physical wiring, colour order, grounding, and real LED behaviour still require California validation.
-
-## Current architecture assumption
-
-ESP32-S3 runs:
-
-- controller logic
-- LED animation logic
-- LED frame generation
-
-The Output Expander handles:
-
-- 8-channel LED output timing
-- 5V level-shifted LED data
-- simultaneous channel updates after `DRAW_ALL`
-
-Target architecture:
+Confirmed target hardware:
 
 ```text
-ESP32-S3 → UART → Pixelblaze Output Expander → LED zones
+ElectroMage Pixelblaze Output Expander v3.0
+electromage.com Output Expander v3.0 @2021 Ben Hencke
 ```
 
-## ESP32 to expander wiring
+Product reference:
 
 ```text
-ESP32-S3 UART TX  →  Expander DAT
-ESP32-S3 GND      →  Expander GND
-5V supply         →  Expander / LED power as appropriate
+https://shop.electromage.com/products/pixelblaze-output-expander-serial-to-8x-ws2812-apa102-driver
 ```
 
-Notes:
+Use that current ElectroMage product page as the capacity reference for this project. Older Output Expander README/version information can mention lower limits; do not use those older limits unless they clearly apply to a different board version.
 
-- `CLK` is unused for WS2811 / WS2812B.
-- `CLK` is only relevant for APA102 / DotStar-style clocked LEDs.
-- No level shifter is expected between ESP32-S3 UART TX and expander `DAT`.
-- ESP32 TX-only is expected to be sufficient; expander RX back to ESP32 is not required for the basic protocol.
-- Shared ground is required.
-- Current planned Tardi wiring is ESP32 GPIO39 TX -> expander `DAT`.
-- GPIO39 is JTAG-related, so reset/default-state behaviour still needs California validation. Firmware holds GPIO39 at UART-idle HIGH after setup begins, but cannot control the pre-firmware reset / bootloader / JTAG window.
-
-## Power notes
-
-The current board is the standard expander, not the Pro.
-
-Do not treat the standard expander as major power distribution hardware.
-
-- Standard expander: useful as LED data output hardware.
-- Pro expander: adds 15A fused power distribution.
-- Current board does not have Pro-style fused distribution.
-- Sculpture power injection, 5V spines, and ground distribution remain separate wiring concerns.
-
-## Communication
-
-- Protocol: Pixelblaze Output Expander serial protocol.
-- Transport: UART serial.
-- Baud rate: `2,000,000`.
-- Arduino/C++ driver/library: `simap/PBDriverAdapter`.
-- `PBDriverAdapter` is software, not hardware.
-- It formats RGB pixel data into the serial frames expected by the Output Expander.
-- ESP32 sends channel pixel data through `PBDriverAdapter`.
-- Expander receives channel data, then `DRAW_ALL` updates outputs together.
-- ESP32 code should generate RGB pixel values; the expander handles LED timing.
-
-## Working output channel map
-
-Use this as the current baseline unless Whit corrects it.
+Relevant capacity:
 
 ```text
-Output 0 = Zone 8 string/stations / 100 pixels / logical start 1908
-Output 1 = Zone 1 mouth / 208 pixels / logical start 0
-Output 2 = Zone 2 shoulder / 325 pixels / logical start 208
-Output 3 = Zone 3 midbody / 400 pixels / logical start 533
-Output 4 = Zone 4 rear / 300 pixels / logical start 933
-Output 5 = Zone 5 legs / first legs group / 300 pixels / logical start 1233
-Output 6 = Zone 6 legs / second legs group / 300 pixels / logical start 1533
-Output 7 = Zone 7 digestive / 75 logical pixels / logical start 1833
+up to 800 RGB pixels per channel for WS2812 / NeoPixel-style output
 ```
 
-Do not assume Zone 1 maps to Output 0.
+The largest current Tardi channel is Ch3 / Midbody at 400 pixels, so the current channel lengths are within the documented capacity.
 
-## Current LED assumptions
-
-- Regular WS2812B strips use GRB colour order.
-- Zones 3, 4, and 7 use 4-wire WS2811-style spool wiring.
-- Output 7’s 75-pixel logical count is intentional for now, even though older docs mention 400 physical digestive LEDs.
-- Treat Zone 7 as “75 logical pixels / parallel digestive runs” until corrected.
-
-## Keep / discard rules
-
-Keep as current:
-
-- Standard Output Expander v3.0.
-- ESP32-S3 drives expander over UART.
-- Output map listed above.
-- 300–400 pixel channels are within the current ElectroMage product-page capacity for the confirmed target board.
-- Pro is only relevant if the installation needs fused power distribution or another Pro-specific hardware feature.
-
-Treat as old or secondary:
-
-- Any 48-LED Zone 1 ambient snippet.
-- Any provisional channel map that says outputs 0–4 are simply Zones 1–4 without the master pattern mapping.
-- Any Pixelblaze button or FIRE/poofer logic in old patterns.
-
-## Must confirm with Whit
-
-- Actual live Pixelblaze Output Expander config.
-- Physical output 0–7 wiring.
-- LED type per output.
-- Colour order per output.
-- Whether Zone 7 is definitely 75 logical pixels / parallel physical runs.
-- Whether any output uses APA102/DotStar requiring `CLK`.
-- Current power injection / distribution scheme.
-
-## Bench test plan
-
-### Stage 1: one short strip
-
-- Connect ESP32-S3 UART TX to expander `DAT`.
-- Connect ESP32-S3 GND to expander GND.
-- Power expander and test LED strip appropriately.
-- Configure one output for 30 WS2812B pixels.
-- Run simple red / green / blue / white / off cycle.
-- Confirm expander status LEDs and strip output.
-
-### Stage 2: all outputs
-
-- Test outputs 0–7 one at a time.
-- Use a unique colour per output.
-- Confirm physical channel order.
-
-### Stage 3: large channel
-
-- Configure one output for 300–400 pixels.
-- Run a chase or index-visible pattern.
-- Confirm the full strip updates correctly.
-
-### Stage 4: current channel map
-
-Configure the working output map:
+## Wiring
 
 ```text
-0: 100
-1: 208
-2: 325
-3: 400
-4: 300
-5: 300
-6: 300
-7: 75
+ESP32 GPIO39 TX -> Output Expander DAT / UART input
+ESP32 GND       -> Output Expander GND
+UART baud       = 2000000
 ```
 
-Confirm all active channels update together.
+The UART link is TX-only from ESP32 to Output Expander.
+
+`CLK` is unused for WS2811/WS2812-style LEDs. It only matters for APA102/DotStar-style LEDs.
+
+Shared ground is required. Do not connect ESP32 GPIO pins to 5V logic.
+
+GPIO39 is the planned UART TX pin. It is JTAG-related, so reset/default-state behaviour is a hardware check. Firmware holds GPIO39 at UART-idle HIGH after setup begins, but firmware cannot control the pre-firmware reset/bootloader window.
+
+Fallbacks if GPIO39 physically fails:
+
+```text
+GPIO40 first
+GPIO41 second
+GPIO38 only after a fresh pin review if the issue appears JTAG-related
+```
+
+Do not use GPIO14, GPIO16, or GPIO17 as fallbacks because they are already used. Avoid GPIO35/36/37 on the N8R8/octal PSRAM path. Avoid GPIO19/20 because of USB-related caveats.
+
+## PBDriverAdapter
+
+`PBDriverAdapter` is vendored locally:
+
+```text
+firmware/esp32_controller/src/PBDriverAdapter/
+```
+
+Local patch:
+
+```cpp
+void PBDriverAdapter::begin(uint32_t uartFrequency, int8_t txPin);
+```
+
+This lets the firmware use GPIO39 instead of the upstream ESP32 default TX pin.
+
+Do not modify vendored PBDriverAdapter files unless a task explicitly asks for driver work.
+
+## Channel Mapping
+
+| Channel | Physical LEDs | Firmware zone | Pixels | Logical start |
+|---:|---|---|---:|---:|
+| Ch0 | Button station LEDs | Z8 | 100 | 1908 |
+| Ch1 | Mouth LEDs | Z1 | 208 | 0 |
+| Ch2 | Shoulder LEDs | Z2 | 325 | 208 |
+| Ch3 | Midbody LEDs | Z3 | 400 | 533 |
+| Ch4 | Rear LEDs | Z4 | 300 | 933 |
+| Ch5 | Front leg LEDs | Z5 | 300 | 1233 |
+| Ch6 | Back leg LEDs | Z6 | 300 | 1533 |
+| Ch7 | Digestive LEDs | Z7 | 75 | 1833 |
+
+Total logical pixels:
+
+```text
+2008
+```
+
+Mouth / Zone 1 is on Ch1, not Ch0. Ch0 is the button-station LED output.
+
+## Colour Order
+
+The PBChannel metadata currently uses RGB indexes:
+
+```text
+redi   = 0
+greeni = 1
+bluei  = 2
+```
+
+Do not change animation HSV/RGB conversion when adjusting Output Expander channel metadata.
+
+## Power Notes
+
+The Output Expander is LED data output hardware, not the whole LED power system.
+
+LED power injection, current capacity, fusing, and ground distribution remain separate sculpture wiring concerns.
+
+The standard v3.0 board is not the Pro fused power-distribution board. Pro hardware is only relevant if the installation needs Pro-specific power-distribution features.
