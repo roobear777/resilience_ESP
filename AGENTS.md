@@ -8,7 +8,7 @@ Do not change casually:
 - FIRE active-LOW polarity
 - button pins
 - OLED pins
-- Big Poof cutoff behaviour
+- Head Poof cutoff behaviour
 - LED Output Expander channel mapping
 - Output Expander UART TX pin / baud
 
@@ -22,7 +22,7 @@ return    = HIGH
 
 Normal FIRE1-FIRE8 pulse duration is 500 ms.
 
-Big Poof / FIRE9 is Button 1 + Button 8 and retains the 10-second FIRE cutoff.
+Head Poof / FIRE9 is Button 1 + Button 8 and retains the 10-second FIRE cutoff.
 
 ## Current Live Build State
 
@@ -86,7 +86,7 @@ Controller logic owns:
 - button debounce
 - accepted button/FIRE triggers
 - FIRE outputs
-- Big Poof logic
+- Head Poof logic
 - safety cutoffs
 - OLED diagnostics
 - Serial logging

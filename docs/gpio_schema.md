@@ -35,7 +35,7 @@ Normal uploads use the Arduino IDE Upload button. BOOT/RESET button handling is 
 | FIRE6 | GPIO13 | output | HIGH idle, LOW trigger | active-LOW relay input |
 | FIRE7 | GPIO14 | output | HIGH idle, LOW trigger | active-LOW relay input |
 | FIRE8 | GPIO21 | output | HIGH idle, LOW trigger | active-LOW relay input |
-| FIRE9 / Big Poof | GPIO47 | output | HIGH idle, LOW trigger | active-LOW relay input |
+| FIRE9 / Head Poof | GPIO47 | output | HIGH idle, LOW trigger | active-LOW relay input |
 | Output Expander TX | GPIO39 | UART TX | UART idle HIGH | 2,000,000 baud |
 
 ## Button Electrical Contract
@@ -62,7 +62,7 @@ Normal FIRE pulse:
 500 ms
 ```
 
-Big Poof FIRE cutoff:
+Head Poof FIRE cutoff:
 
 ```text
 10 seconds maximum while Button 1 + Button 8 remain held

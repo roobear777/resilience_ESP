@@ -28,7 +28,7 @@ The ESP32-S3 owns:
 
 - button debounce and accepted button events
 - FIRE1-FIRE9 active-LOW outputs
-- Big Poof detection and cutoff
+- Head Poof detection and cutoff
 - OLED status display
 - Wi-Fi web controller
 - LED animation rendering
@@ -100,7 +100,7 @@ LOW  = trigger / relay active
 | FIRE6 | GPIO13 |
 | FIRE7 | GPIO14 |
 | FIRE8 | GPIO21 |
-| FIRE9 / Big Poof | GPIO47 |
+| FIRE9 / Head Poof | GPIO47 |
 
 Normal FIRE1-FIRE8 pulse duration:
 
@@ -108,7 +108,7 @@ Normal FIRE1-FIRE8 pulse duration:
 500 ms
 ```
 
-Big Poof FIRE cutoff:
+Head Poof FIRE cutoff:
 
 ```text
 10 seconds maximum while Button 1 + Button 8 are held
@@ -125,8 +125,9 @@ Normal live LED behaviour:
 - triggered zones animate for the configured global animation duration
 - triggered zones return to ambient when that duration expires
 - Button 8 alone triggers FIRE8 but does not directly trigger an independent LED zone
-- Z8 is the button-station LED zone; it mirrors/summarizes Z1-Z7 activity and participates in all-zone Big Poof
-- Button 1 + Button 8 triggers Big Poof and activates all LED zones together for the configured global animation duration
+- Z8 is the button-station LED zone; it mirrors/summarizes Z1-Z7 activity and participates in Full Body LED Animation
+- Button 1 + Button 8 = Head Poof / FIRE9 + Full Body LED Animation
+- Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient
 
 Default LED animation duration:
 
@@ -134,7 +135,7 @@ Default LED animation duration:
 10 seconds
 ```
 
-The web controller can change and save this duration. It affects normal zone animations and the all-zone Big Poof LED animation. It does not change the 500 ms FIRE pulse or 10 second Big Poof FIRE cutoff.
+The web controller can change and save this duration. It affects normal zone animations and Full Body LED Animation. It does not change the 500 ms FIRE pulse or 10 second Head Poof FIRE cutoff.
 
 ## Output Expander
 

@@ -10,7 +10,7 @@ The controller repeatedly:
 2. Debounces button readings.
 3. Detects accepted new press events.
 4. Updates FIRE pulse state.
-5. Updates Big Poof state.
+5. Updates Head Poof state.
 6. Updates LED trigger windows.
 7. Writes active-LOW FIRE outputs.
 8. Renders and sends LED data to the Output Expander.
@@ -75,7 +75,7 @@ Button 7 -> Z7 / Digestive
 
 Button 8 alone does not trigger an independent LED zone. It still triggers FIRE8.
 
-Z8 is the button-station LED zone. It mirrors/summarizes Z1-Z7 activity and participates in all-zone Big Poof.
+Z8 is the button-station LED zone. It mirrors/summarizes Z1-Z7 activity and participates in Full Body LED Animation.
 
 Triggered LED zones use the saved global animation duration. Default:
 
@@ -85,31 +85,31 @@ Triggered LED zones use the saved global animation duration. Default:
 
 When that duration expires, each zone returns to ambient rendering.
 
-## Big Poof
+## Head Poof
 
-Big Poof is the Button 1 + Button 8 combo.
+Button 1 + Button 8 = Head Poof / FIRE9 + Full Body LED Animation.
 
 When the combo is accepted:
 
 ```text
-FIRE9 / Big Poof triggers
-all LED zones Z1-Z8 animate together as one synchronized event
+Head Poof / FIRE9 triggers
+all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient
 ```
 
-Big Poof FIRE output:
+Head Poof FIRE output:
 
 ```text
 FIRE9 active while combo is held, with 10 second maximum cutoff
 ```
 
-Big Poof LED animation:
+Full Body LED Animation:
 
 ```text
-all zones active for the saved global animation duration
-then all zones return to ambient
+all LED zones Z1-Z8 active together for the saved global animation duration
+then return to ambient
 ```
 
-The Big Poof LED duration and FIRE cutoff are separate settings/behaviours.
+The Full Body LED Animation duration and Head Poof FIRE cutoff are separate settings/behaviours.
 
 ## Web Controller
 
@@ -125,7 +125,7 @@ The OLED controller page prioritizes live controller state:
 
 ```text
 SIMULATED or LIVE
-READY / FIRING / PULSE COMPLETE / BIG POOF
+READY / FIRING / PULSE COMPLETE / HEAD POOF
 Input: ...
 FIRE: ...
 LED: ...
@@ -140,7 +140,7 @@ Do not change these without an explicit safety task:
 - FIRE GPIO assignments
 - FIRE active-LOW polarity
 - normal 500 ms FIRE pulse
-- Big Poof 10 second FIRE cutoff
+- Head Poof 10 second FIRE cutoff
 - button mappings
 - LED channel mapping
 - GPIO39 Output Expander UART setting

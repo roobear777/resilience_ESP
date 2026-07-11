@@ -42,11 +42,13 @@ Button 7 -> Z7 / Digestive
 
 Button 8 alone does not trigger an independent LED zone.
 
-Z8 is the button-station LED zone. It mirrors/summarizes the Z1-Z7 station states and is also activated by the synchronized all-zone Big Poof LED event.
+Z8 is the button-station LED zone. It mirrors/summarizes the Z1-Z7 station states and is also activated by Full Body LED Animation.
 
 ## Animation Duration
 
-Normal zone triggers and Big Poof all-zone LED animation use the same saved global animation duration.
+Normal zone triggers and Full Body LED Animation use the same saved global animation duration.
+
+Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient.
 
 Default:
 
@@ -56,7 +58,7 @@ Default:
 
 After the duration expires, zones return to ambient rendering.
 
-This LED duration does not change the 500 ms FIRE pulse or the 10 second Big Poof FIRE cutoff.
+This LED duration does not change the 500 ms FIRE pulse or the 10 second Head Poof FIRE cutoff.
 
 ## LED Settings
 

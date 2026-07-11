@@ -15,6 +15,7 @@
 #include <math.h>
 
 static bool ledPressureTestEnabled = false;
+static bool ledAllGreenOverride = false;
 static uint32_t ledLastFrameMs = 0;
 static uint32_t ledFrameDeltaMs = 0;
 
@@ -226,6 +227,10 @@ void ledEngineSetPressureTestEnabled(bool enabled) {
   ledPressureTestEnabled = enabled;
 }
 
+void ledEngineSetAllGreenOverride(bool enabled) {
+  ledAllGreenOverride = enabled;
+}
+
 bool ledEngineIsZoneActive(uint8_t zoneIndex, uint32_t nowMs) {
   if (ledPressureTestEnabled) {
     return true;
@@ -239,6 +244,10 @@ LedColor ledEngineRenderPixel(uint16_t logicalPixelIndex, uint32_t nowMs) {
 
   if (!ledLayoutZoneForPixel(logicalPixelIndex, zoneIndex)) {
     return LED_COLOR_BLACK;
+  }
+
+  if (ledAllGreenOverride) {
+    return { 0.333f, 1.0f, 1.0f };
   }
 
   if (zoneIndex == LED_ZONE_Z1_MOUTH) {

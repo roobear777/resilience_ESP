@@ -107,7 +107,7 @@ Total logical pixels:
 2008
 ```
 
-Z8 is the button-station LED zone. Button 8 alone does not trigger an independent LED zone. Z8 mirrors/summarizes Z1-Z7 station activity and is included when Big Poof activates all LED zones.
+Z8 is the button-station LED zone. Button 8 alone does not trigger an independent LED zone. Z8 mirrors/summarizes Z1-Z7 station activity and is included in Full Body LED Animation.
 
 ## Colour Metadata
 
@@ -143,13 +143,15 @@ Button 8:
 Button 8 -> FIRE8 only; no independent LED zone 8 trigger
 ```
 
-Big Poof:
+Head Poof:
 
 ```text
-Button 1 + Button 8 -> FIRE9 / Big Poof + all LED zones active
+Button 1 + Button 8 -> Head Poof / FIRE9 + Full Body LED Animation
 ```
 
-Both normal zone triggers and Big Poof all-zone LED animation use the saved global animation duration. Default:
+Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient.
+
+Both normal zone triggers and Full Body LED Animation use the saved global animation duration. Default:
 
 ```text
 10 seconds

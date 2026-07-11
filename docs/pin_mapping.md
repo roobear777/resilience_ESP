@@ -78,7 +78,7 @@ LOW  = trigger / relay active
 | FIRE6 | GPIO13 |
 | FIRE7 | GPIO14 |
 | FIRE8 | GPIO21 |
-| FIRE9 / Big Poof | GPIO47 |
+| FIRE9 / Head Poof | GPIO47 |
 
 Normal FIRE1-FIRE8 pulse:
 
@@ -86,7 +86,7 @@ Normal FIRE1-FIRE8 pulse:
 500 ms
 ```
 
-Big Poof FIRE cutoff:
+Head Poof FIRE cutoff:
 
 ```text
 10 seconds maximum

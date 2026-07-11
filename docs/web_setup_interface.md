@@ -33,7 +33,7 @@ Current web controls include:
 - behaviour
 - animation duration
 
-The animation-duration control applies to normal button-triggered LED animations and the all-zone Big Poof LED animation. It does not change FIRE pulse timing or the Big Poof FIRE cutoff.
+The animation-duration control applies to normal button-triggered LED animations and Full Body LED Animation. It does not change FIRE pulse timing or the Head Poof FIRE cutoff.
 
 ## Save / Reset
 
@@ -65,4 +65,4 @@ It must not bypass:
 - FIRE safety behaviour
 - Output Expander guard/state
 - PBDriverAdapter runtime logic
-- button/FIRE/Big Poof timing
+- button/FIRE/Head Poof timing

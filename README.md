@@ -8,7 +8,7 @@ This repo currently builds the live sculpture firmware:
 - Real LED output through the Pixelblaze Output Expander is enabled.
 - Ambient LEDs start automatically after boot.
 - The `TARDI-LED` Wi-Fi controller is available while powered.
-- FIRE outputs still use the 500 ms pulse and Big Poof cutoff safeguards.
+- FIRE outputs still use the 500 ms pulse and Head Poof cutoff safeguards.
 
 ## Upload
 
@@ -59,11 +59,13 @@ Buttons 1-7 trigger their matching FIRE outputs and LED zones.
 
 Button 8 triggers FIRE8, but does not directly start an independent LED zone.
 
-Button 1 + Button 8 triggers Big Poof / FIRE9 and activates all LED zones together.
+Button 1 + Button 8 = Head Poof / FIRE9 + Full Body LED Animation.
+
+Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient.
 
 LED active windows use the saved global animation duration. Default is 10 seconds. When a zone's duration ends, it returns to ambient.
 
-Normal FIRE outputs pulse for 500 ms. Big Poof / FIRE9 has a 10-second FIRE safety cutoff. LED animation duration does not change either FIRE timing.
+Normal FIRE outputs pulse for 500 ms. Head Poof / FIRE9 has a 10-second FIRE safety cutoff. LED animation duration does not change either FIRE timing.
 
 ## Essential Wiring Facts
 
@@ -95,7 +97,7 @@ Manual LED test commands still exist, but normal sculpture operation does not re
 - `docs/current_baseline.md` - current live-build baseline
 - `docs/gpio_schema.md` - GPIO table
 - `docs/pin_mapping.md` - pin rules and reservations
-- `docs/interaction_logic.md` - button, FIRE, LED, and Big Poof behaviour
+- `docs/interaction_logic.md` - button, FIRE, LED, and Head Poof behaviour
 - `docs/esp32_led_port_status.md` - LED port status
 - `docs/led_output_expander.md` - Output Expander wiring/channel reference
 - `docs/led_animation_architecture.md` - LED render architecture

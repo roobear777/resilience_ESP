@@ -18,7 +18,7 @@
 // - FIRE outputs idle HIGH
 // - FIRE outputs trigger LOW
 // - FIRE1-FIRE8 normal one-shot fire outputs
-// - FIRE9 / Big Poof active only while Button 1 + Button 8 are held
+// - FIRE9 / Head Poof active only while Button 1 + Button 8 are held
 // - Serial diagnostics
 // - OLED diagnostics
 //
@@ -63,12 +63,14 @@ const int FIRE9_INDEX = 8;
 
 const unsigned long DEBOUNCE_MS = 30;
 
-// FIRE1-FIRE8: 500 ms one-shot pulse.
-// FIRE9 / Big Poof follows the Button 1 + Button 8 hold state.
-const unsigned long NORMAL_FIRE_PULSE_MS = 500;
+// FIRE1-FIRE8: 100 ms repeating pulse while held.
+// FIRE9 / Head Poof follows the Button 1 + Button 8 hold state.
+const unsigned long NORMAL_FIRE_PULSE_MS = 100;
+const unsigned long FIRE_REPEAT_INTERVAL_MS = 1000;
+const unsigned long ALL_BUTTONS_FIRE_PULSE_MS = 500;
 
 // Backup guard only.
-// Normal pulse behavior should return outputs HIGH after 500 ms.
+// Normal pulse behavior should return outputs HIGH after 100 ms.
 const unsigned long OUTPUT_CUTOFF_MS = 10000;
 
 // Prevents Serial flooding while keeping the loop non-blocking.
@@ -177,7 +179,7 @@ const int FIRE_PINS[NUM_FIRE_OUTPUTS] = {
   13, // FIRE6
   14, // FIRE7
   21, // FIRE8
-  47  // FIRE9 / big poof
+  47  // FIRE9 / Head Poof
 };
 
 const int FIRE_IDLE_LEVEL = HIGH;
@@ -199,8 +201,13 @@ unsigned long buttonPressedStartMs[NUM_BUTTONS] = { 0 };
 bool fireState[NUM_FIRE_OUTPUTS] = { false };
 bool firePulseActive[NUM_FIRE_OUTPUTS] = { false };
 unsigned long firePulseStartMs[NUM_FIRE_OUTPUTS] = { 0 };
+unsigned long firePulseDurationMs[NUM_FIRE_OUTPUTS] = { 0 };
+unsigned long lastFireRepeatMs[NUM_BUTTONS] = { 0 };
 
 unsigned long bigPoofStartMs = 0;
+unsigned long allButtonsPulseStartMs = 0;
+bool allButtonsPulseActive = false;
+bool allButtonsPulseArmed = true;
 
 unsigned long lastSerialDebugMs = 0;
 unsigned long lastOledUpdateMs = 0;
@@ -244,6 +251,7 @@ void loop() {
   processSerialLedCommands();
   readButtons();
   updateButtonDebounce();
+  updateLedOverrides();
   bool bigPoofStartedThisLoop = updateInteractionLogic();
   updateLedTriggers(bigPoofStartedThisLoop);
   updateLedOutputs();
@@ -329,8 +337,14 @@ void updateButtonDebounce() {
 bool updateInteractionLogic() {
   updateInteractionState();
   clearFireStates();
-  updateNormalFireLogic();
-  bool bigPoofStartedThisLoop = updateBigPoofLogic();
+  bool suppressNormalFireLogic = updateAllButtonsFireLogic();
+  bool bigPoofStartedThisLoop = false;
+
+  if (!suppressNormalFireLogic) {
+    updateNormalFireLogic();
+    bigPoofStartedThisLoop = updateBigPoofLogic();
+  }
+
   updateFirePulseStates();
   return bigPoofStartedThisLoop;
 }
@@ -346,28 +360,105 @@ void clearFireStates() {
   }
 }
 
-void startFirePulse(int fireIndex) {
+void startFirePulseForDuration(int fireIndex, unsigned long pulseDurationMs) {
   if (fireIndex < 0 || fireIndex >= NUM_FIRE_OUTPUTS) {
     return;
   }
 
   firePulseActive[fireIndex] = true;
   firePulseStartMs[fireIndex] = millis();
+  firePulseDurationMs[fireIndex] = pulseDurationMs;
+}
+
+void startFirePulse(int fireIndex) {
+  startFirePulseForDuration(fireIndex, NORMAL_FIRE_PULSE_MS);
 }
 
 void updateNormalFireLogic() {
-  // Button 1-8 each start one matching 500 ms FIRE1-FIRE8 pulse.
-  // Holding a button does not keep FIRE active.
+  // Button 1-8 each start matching 100 ms FIRE1-FIRE8 pulses while held.
+  unsigned long now = millis();
 
   for (int i = 0; i < NUM_BUTTONS; i++) {
     if (buttonPressEvent[i]) {
       startFirePulse(i);
+      lastFireRepeatMs[i] = now;
+      continue;
+    }
+
+    if (!debouncedButtonState[i]) {
+      lastFireRepeatMs[i] = 0;
+      continue;
+    }
+
+    if ((now - lastFireRepeatMs[i]) >= FIRE_REPEAT_INTERVAL_MS) {
+      startFirePulse(i);
+      lastFireRepeatMs[i] = now;
     }
   }
 }
 
+bool updateAllButtonsFireLogic() {
+  unsigned long now = millis();
+  bool allButtonsPressed = areAllButtonsPressed();
+
+  if (!allButtonsPressed) {
+    allButtonsPulseArmed = true;
+  }
+
+  if (allButtonsPulseActive) {
+    if ((now - allButtonsPulseStartMs) < ALL_BUTTONS_FIRE_PULSE_MS) {
+      bigPoofStartMs = 0;
+      syncNormalFireRepeatTimers(now);
+      return true;
+    }
+
+    allButtonsPulseActive = false;
+    allButtonsPulseStartMs = 0;
+    bigPoofStartMs = 0;
+    syncNormalFireRepeatTimers(now);
+  }
+
+  if (allButtonsPressed && allButtonsPulseArmed) {
+    allButtonsPulseActive = true;
+    allButtonsPulseArmed = false;
+    allButtonsPulseStartMs = now;
+    bigPoofStartMs = 0;
+
+    for (int i = 0; i < NUM_FIRE_OUTPUTS; i++) {
+      startFirePulseForDuration(i, ALL_BUTTONS_FIRE_PULSE_MS);
+    }
+
+    syncNormalFireRepeatTimers(now);
+    return true;
+  }
+
+  if (allButtonsPressed && !allButtonsPulseArmed) {
+    bigPoofStartMs = 0;
+    syncNormalFireRepeatTimers(now);
+    return true;
+  }
+
+  return false;
+}
+
+bool areAllButtonsPressed() {
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+    if (!debouncedButtonState[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void syncNormalFireRepeatTimers(unsigned long now) {
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+    lastFireRepeatMs[i] = debouncedButtonState[i] ? now : 0;
+  }
+}
+
 // ==================================================
-// BIG POOF LOGIC
+// HEAD POOF LOGIC
 // ==================================================
 //
 // Current trigger:
@@ -376,7 +467,7 @@ void updateNormalFireLogic() {
 // Current behavior:
 // FIRE9 is active only while Button 1 and Button 8 are both held.
 // Releasing either input turns FIRE9 off.
-// A 10 second cutoff still prevents a stuck Big Poof output.
+// A 10 second cutoff still prevents a stuck Head Poof output.
 
 bool isBigPoofRequested() {
   return debouncedButtonState[0] && debouncedButtonState[7];
@@ -427,6 +518,7 @@ void updateFirePulseStates() {
     if (elapsedMs >= pulseDuration || elapsedMs >= OUTPUT_CUTOFF_MS) {
       firePulseActive[i] = false;
       firePulseStartMs[i] = 0;
+      firePulseDurationMs[i] = 0;
       fireState[i] = false;
     } else {
       fireState[i] = true;
@@ -435,12 +527,20 @@ void updateFirePulseStates() {
 }
 
 unsigned long getPulseDurationMs(int fireIndex) {
+  if (fireIndex >= 0 && fireIndex < NUM_FIRE_OUTPUTS && firePulseDurationMs[fireIndex] > 0) {
+    return firePulseDurationMs[fireIndex];
+  }
+
   return NORMAL_FIRE_PULSE_MS;
 }
 
 // ==================================================
 // LED HOOKS
 // ==================================================
+
+void updateLedOverrides() {
+  ledEngineSetAllGreenOverride(debouncedButtonState[1] && debouncedButtonState[5]);
+}
 
 void updateLedTriggers(bool bigPoofStartedThisLoop) {
   unsigned long now = millis();
@@ -830,7 +930,7 @@ void printSerialDebug() {
     }
   }
 
-  Serial.print(" | BigPoof=");
+  Serial.print(" | HeadPoof=");
   Serial.print(isBigPoofRequested() ? "1" : "0");
 
   Serial.print(" | Outputs=");
@@ -878,12 +978,12 @@ void printSerialDebug() {
 //   LED: 4
 //   No live output
 //
-// Older Big Poof page example:
+// Older Head Poof page example:
 //   SIMULATOR MODE
-//   BIG POOF
+//   HEAD POOF
 //   Input: 1+8
 //   Output: 1 8 9
-//   LED: BIG
+//   LED: FULL BODY
 //   No live output
 //
 // Older live-output wording:
@@ -1039,7 +1139,7 @@ void drawOledLineWithValue(int lineNumber, const String &label, const String &va
 
 String getOledStatusLabel() {
   if (isBigPoofDisplayActive()) {
-    return "BIG POOF";
+    return "HEAD POOF";
   }
 
   if (hasAnyActiveFireOutput()) {
@@ -1188,7 +1288,7 @@ String getOutputDisplayLabel() {
 
 String getLedDisplayLabel() {
   if (isBigPoofRequested() || fireState[FIRE9_INDEX]) {
-    return "BIG POOF";
+    return "FULL BODY";
   }
 
   LedOutputMode mode = ledExpanderOutputMode();
