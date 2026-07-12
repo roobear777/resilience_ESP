@@ -97,7 +97,7 @@ Manual LED test commands still exist, but normal sculpture operation does not re
 - `docs/current_baseline.md` - current live-build baseline
 - `docs/gpio_schema.md` - GPIO table
 - `docs/pin_mapping.md` - pin rules and reservations
-- `docs/interaction_logic.md` - button, FIRE, LED, and Head Poof behaviour
+- `docs/interaction_logic.md` - button, FIRE, LED, Head Poof, and temporary proof-of-concept interactions
 - `docs/esp32_led_port_status.md` - LED port status
 - `docs/led_output_expander.md` - Output Expander wiring/channel reference
 - `docs/led_animation_architecture.md` - LED render architecture

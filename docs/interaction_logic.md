@@ -111,6 +111,38 @@ then return to ambient
 
 The Full Body LED Animation duration and Head Poof FIRE cutoff are separate settings/behaviours.
 
+## Temporary Proof-of-Concept Interactions
+
+These behaviours are experimental proof-of-concept changes. They may be removed or changed before the final live build, and should not be treated as stable baseline behaviour.
+
+Normal FIRE repeat proof of concept:
+
+```text
+first valid button press -> immediate FIRE pulse
+held button             -> additional FIRE pulse every 1000 ms
+normal FIRE pulse       -> 100 ms
+release                 -> stops further repeat pulses
+```
+
+All-buttons FIRE proof of concept:
+
+```text
+Buttons 1-8 held together -> FIRE1-FIRE9 active together for 500 ms
+held after the pulse      -> no repeat
+re-arm                    -> release at least one button, then press all eight again
+```
+
+While the all-buttons pulse is active, normal repeating FIRE and Head Poof FIRE requests are suppressed.
+
+LED override proof of concept:
+
+```text
+Buttons 2 + 6 held together -> all LED zones Z1-Z8 render solid green
+release either button       -> normal LED rendering resumes
+```
+
+This green LED override is runtime-only. It does not change saved settings, palettes, brightness, saturation, zone configuration, or web controller state.
+
 ## Web Controller
 
 The web controller changes LED look/feel settings only.
