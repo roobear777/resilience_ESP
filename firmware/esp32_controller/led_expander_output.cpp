@@ -197,6 +197,15 @@ static void ledExpanderChannelSwitchCallback(PBChannel *channel) {
   (void)channel;
 }
 
+static void ledExpanderOutputStartRealOutput() {
+  if (ledExpanderRealOutputStarted) {
+    return;
+  }
+
+  ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
+  ledExpanderRealOutputStarted = true;
+}
+
 void ledExpanderOutputBegin() {
   // UART TX idles HIGH; set the planned expander TX pin safe before Serial1 owns it.
   digitalWrite(PB_EXPANDER_TX_PIN, HIGH);
@@ -229,8 +238,7 @@ void ledExpanderOutputBegin() {
   ledExpanderOutputInitialized = true;
 
   if (ENABLE_REAL_PB_EXPANDER_OUTPUT && ledExpanderRuntimeMode != LED_OUTPUT_OFF) {
-    ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
-    ledExpanderRealOutputStarted = true;
+    ledExpanderOutputStartRealOutput();
   }
 }
 
@@ -240,10 +248,7 @@ static bool ledExpanderOutputStartRealOutputIfAllowed(Stream &out) {
     return false;
   }
 
-  if (!ledExpanderRealOutputStarted) {
-    ledExpanderDriver.begin(PB_EXPANDER_BAUD_RATE, PB_EXPANDER_TX_PIN);
-    ledExpanderRealOutputStarted = true;
-  }
+  ledExpanderOutputStartRealOutput();
 
   return true;
 }
@@ -271,7 +276,7 @@ void ledExpanderOutputUpdate(uint32_t nowMs) {
   }
 
   if (!ledExpanderRealOutputStarted) {
-    return;
+    ledExpanderOutputStartRealOutput();
   }
 
   ledExpanderOutputShowFrameIfStarted(nowMs);
