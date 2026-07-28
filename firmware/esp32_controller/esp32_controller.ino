@@ -1,5 +1,9 @@
 #include <Arduino.h>
 
+#if defined(ESP32)
+#include "soc/gpio_struct.h"
+#endif
+
 #include "led_engine.h"
 #include "led_expander_output.h"
 #include "led_layout.h"
@@ -85,6 +89,11 @@ const unsigned long OLED_SETUP_PAGE_INTERVAL_MS = 4000;
 // Keep disabled for the live build; helpers remain available for manual checks.
 const bool ENABLE_EXPANDER_SIM_SERIAL_DIAGNOSTICS = false;
 const unsigned long EXPANDER_SIM_SERIAL_DIAGNOSTIC_INTERVAL_MS = 5000;
+
+const uint8_t RGB_TEST_GPIO38_PIN = 38;
+const uint8_t RGB_TEST_GPIO48_PIN = 48;
+const unsigned long RGB_TEST_ON_MS = 3000;
+const unsigned long RGB_TEST_GAP_MS = 1000;
 
 // false = keep FIRE GPIOs idle HIGH; Serial/OLED still show requested state.
 // true  = allow FIRE GPIOs to drive the live active-LOW FIRE outputs.
@@ -216,6 +225,30 @@ unsigned long lastExpanderSimDiagnosticMs = 0;
 bool oledReady = false;
 String serialLedCommandBuffer = "";
 
+enum RgbTestState {
+  RGB_TEST_IDLE,
+  RGB_TEST_GPIO38_START,
+  RGB_TEST_GPIO38_WAIT,
+  RGB_TEST_GAP_START,
+  RGB_TEST_GAP_WAIT,
+  RGB_TEST_GPIO48_START,
+  RGB_TEST_GPIO48_WAIT
+};
+
+RgbTestState rgbTestState = RGB_TEST_IDLE;
+unsigned long rgbTestStageStartMs = 0;
+
+void startRgbTestDiagnostic();
+void updateRgbTestDiagnostic();
+void rgbDiagnosticSetCandidatePinsInput();
+void rgbDiagnosticShowBlue(uint8_t pin);
+void rgbDiagnosticShowOff(uint8_t pin);
+void rgbDiagnosticWritePixel(uint8_t pin, uint8_t red, uint8_t green, uint8_t blue);
+void rgbDiagnosticWriteByte(uint8_t pin, uint8_t value);
+void rgbDiagnosticWriteBit(uint8_t pin, bool value);
+void rgbDiagnosticWritePinFast(uint8_t pin, bool level);
+void rgbDiagnosticDelayNops(uint16_t count);
+
 // ==================================================
 // SETUP
 // ==================================================
@@ -249,6 +282,7 @@ void setup() {
 
 void loop() {
   processSerialLedCommands();
+  updateRgbTestDiagnostic();
   readButtons();
   updateButtonDebounce();
   updateLedOverrides();
@@ -640,6 +674,11 @@ void handleSerialLedCommand(String command) {
     return;
   }
 
+  if (command == "rgb test") {
+    startRgbTestDiagnostic();
+    return;
+  }
+
   if (command == "led status") {
     ledExpanderOutputPrintRuntimeStatus(Serial);
     ledSettingsPrint(Serial);
@@ -868,6 +907,7 @@ void handleLedSettingsSetCommand(const String &command) {
 void printLedCommandHelp() {
   Serial.println("LED commands:");
   Serial.println("  wifi status");
+  Serial.println("  rgb test");
   Serial.println("  led status");
   Serial.println("  led settings");
   Serial.println("  led save");
@@ -941,6 +981,150 @@ void printSerialDebug() {
 
   Serial.print(" | OLED=");
   Serial.println(ENABLE_OLED_HARDWARE ? (oledReady ? "READY" : "ERROR") : "OFF");
+}
+
+// ==================================================
+// TEMPORARY ONBOARD RGB DIAGNOSTIC
+// ==================================================
+
+void startRgbTestDiagnostic() {
+  if (rgbTestState != RGB_TEST_IDLE) {
+    Serial.println("RGB TEST already running");
+    return;
+  }
+
+  rgbDiagnosticShowOff(RGB_TEST_GPIO38_PIN);
+  rgbDiagnosticShowOff(RGB_TEST_GPIO48_PIN);
+  rgbDiagnosticSetCandidatePinsInput();
+  rgbTestStageStartMs = 0;
+  rgbTestState = RGB_TEST_GPIO38_START;
+}
+
+void updateRgbTestDiagnostic() {
+  unsigned long now = millis();
+
+  switch (rgbTestState) {
+    case RGB_TEST_IDLE:
+      return;
+
+    case RGB_TEST_GPIO38_START:
+      Serial.println("TESTING ONBOARD RGB ON GPIO38");
+      rgbDiagnosticShowBlue(RGB_TEST_GPIO38_PIN);
+      rgbTestStageStartMs = now;
+      rgbTestState = RGB_TEST_GPIO38_WAIT;
+      return;
+
+    case RGB_TEST_GPIO38_WAIT:
+      if ((now - rgbTestStageStartMs) >= RGB_TEST_ON_MS) {
+        rgbDiagnosticShowOff(RGB_TEST_GPIO38_PIN);
+        pinMode(RGB_TEST_GPIO38_PIN, INPUT);
+        rgbTestState = RGB_TEST_GAP_START;
+      }
+      return;
+
+    case RGB_TEST_GAP_START:
+      rgbTestStageStartMs = now;
+      rgbTestState = RGB_TEST_GAP_WAIT;
+      return;
+
+    case RGB_TEST_GAP_WAIT:
+      if ((now - rgbTestStageStartMs) >= RGB_TEST_GAP_MS) {
+        rgbTestState = RGB_TEST_GPIO48_START;
+      }
+      return;
+
+    case RGB_TEST_GPIO48_START:
+      Serial.println("TESTING ONBOARD RGB ON GPIO48");
+      rgbDiagnosticShowBlue(RGB_TEST_GPIO48_PIN);
+      rgbTestStageStartMs = now;
+      rgbTestState = RGB_TEST_GPIO48_WAIT;
+      return;
+
+    case RGB_TEST_GPIO48_WAIT:
+      if ((now - rgbTestStageStartMs) >= RGB_TEST_ON_MS) {
+        rgbDiagnosticShowOff(RGB_TEST_GPIO48_PIN);
+        rgbDiagnosticSetCandidatePinsInput();
+        Serial.println("RGB TEST COMPLETE");
+        Serial.println("Report which test made the onboard LED light.");
+        rgbTestState = RGB_TEST_IDLE;
+      }
+      return;
+  }
+}
+
+void rgbDiagnosticSetCandidatePinsInput() {
+  pinMode(RGB_TEST_GPIO38_PIN, INPUT);
+  pinMode(RGB_TEST_GPIO48_PIN, INPUT);
+}
+
+void rgbDiagnosticShowBlue(uint8_t pin) {
+  rgbDiagnosticWritePixel(pin, 0, 0, 255);
+}
+
+void rgbDiagnosticShowOff(uint8_t pin) {
+  rgbDiagnosticWritePixel(pin, 0, 0, 0);
+}
+
+void rgbDiagnosticWritePixel(uint8_t pin, uint8_t red, uint8_t green, uint8_t blue) {
+  pinMode(pin, OUTPUT);
+  rgbDiagnosticWritePinFast(pin, LOW);
+  delayMicroseconds(80);
+
+  noInterrupts();
+  rgbDiagnosticWriteByte(pin, green);
+  rgbDiagnosticWriteByte(pin, red);
+  rgbDiagnosticWriteByte(pin, blue);
+  interrupts();
+
+  rgbDiagnosticWritePinFast(pin, LOW);
+  delayMicroseconds(80);
+}
+
+void rgbDiagnosticWriteByte(uint8_t pin, uint8_t value) {
+  for (uint8_t mask = 0x80; mask != 0; mask >>= 1) {
+    rgbDiagnosticWriteBit(pin, (value & mask) != 0);
+  }
+}
+
+void rgbDiagnosticWriteBit(uint8_t pin, bool value) {
+  rgbDiagnosticWritePinFast(pin, HIGH);
+
+  if (value) {
+    rgbDiagnosticDelayNops(62);
+    rgbDiagnosticWritePinFast(pin, LOW);
+    rgbDiagnosticDelayNops(28);
+  } else {
+    rgbDiagnosticDelayNops(28);
+    rgbDiagnosticWritePinFast(pin, LOW);
+    rgbDiagnosticDelayNops(62);
+  }
+}
+
+void rgbDiagnosticWritePinFast(uint8_t pin, bool level) {
+#if defined(ESP32)
+  if (pin < 32) {
+    if (level) {
+      GPIO.out_w1ts = 1UL << pin;
+    } else {
+      GPIO.out_w1tc = 1UL << pin;
+    }
+    return;
+  }
+
+  if (level) {
+    GPIO.out1_w1ts.val = 1UL << (pin - 32);
+  } else {
+    GPIO.out1_w1tc.val = 1UL << (pin - 32);
+  }
+#else
+  digitalWrite(pin, level ? HIGH : LOW);
+#endif
+}
+
+void rgbDiagnosticDelayNops(uint16_t count) {
+  while (count-- > 0) {
+    asm volatile("nop");
+  }
 }
 
 // ==================================================
