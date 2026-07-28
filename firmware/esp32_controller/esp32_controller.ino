@@ -92,8 +92,6 @@ const unsigned long EXPANDER_SIM_SERIAL_DIAGNOSTIC_INTERVAL_MS = 5000;
 
 const uint8_t RGB_TEST_GPIO38_PIN = 38;
 const uint8_t RGB_TEST_GPIO48_PIN = 48;
-const unsigned long RGB_TEST_ON_MS = 3000;
-const unsigned long RGB_TEST_GAP_MS = 1000;
 
 // false = keep FIRE GPIOs idle HIGH; Serial/OLED still show requested state.
 // true  = allow FIRE GPIOs to drive the live active-LOW FIRE outputs.
@@ -225,23 +223,11 @@ unsigned long lastExpanderSimDiagnosticMs = 0;
 bool oledReady = false;
 String serialLedCommandBuffer = "";
 
-enum RgbTestState {
-  RGB_TEST_IDLE,
-  RGB_TEST_GPIO38_START,
-  RGB_TEST_GPIO38_WAIT,
-  RGB_TEST_GAP_START,
-  RGB_TEST_GAP_WAIT,
-  RGB_TEST_GPIO48_START,
-  RGB_TEST_GPIO48_WAIT
-};
-
-RgbTestState rgbTestState = RGB_TEST_IDLE;
-unsigned long rgbTestStageStartMs = 0;
-
 void startRgbTestDiagnostic();
-void updateRgbTestDiagnostic();
+void stopRgbTestDiagnostic();
 void rgbDiagnosticSetCandidatePinsInput();
-void rgbDiagnosticShowBlue(uint8_t pin);
+void rgbDiagnosticShowRed(uint8_t pin);
+void rgbDiagnosticShowGreen(uint8_t pin);
 void rgbDiagnosticShowOff(uint8_t pin);
 void rgbDiagnosticWritePixel(uint8_t pin, uint8_t red, uint8_t green, uint8_t blue);
 void rgbDiagnosticWriteByte(uint8_t pin, uint8_t value);
@@ -282,7 +268,6 @@ void setup() {
 
 void loop() {
   processSerialLedCommands();
-  updateRgbTestDiagnostic();
   readButtons();
   updateButtonDebounce();
   updateLedOverrides();
@@ -679,6 +664,11 @@ void handleSerialLedCommand(String command) {
     return;
   }
 
+  if (command == "rgb off") {
+    stopRgbTestDiagnostic();
+    return;
+  }
+
   if (command == "led status") {
     ledExpanderOutputPrintRuntimeStatus(Serial);
     ledSettingsPrint(Serial);
@@ -908,6 +898,7 @@ void printLedCommandHelp() {
   Serial.println("LED commands:");
   Serial.println("  wifi status");
   Serial.println("  rgb test");
+  Serial.println("  rgb off");
   Serial.println("  led status");
   Serial.println("  led settings");
   Serial.println("  led save");
@@ -988,68 +979,20 @@ void printSerialDebug() {
 // ==================================================
 
 void startRgbTestDiagnostic() {
-  if (rgbTestState != RGB_TEST_IDLE) {
-    Serial.println("RGB TEST already running");
-    return;
-  }
+  rgbDiagnosticShowRed(RGB_TEST_GPIO38_PIN);
+  rgbDiagnosticShowGreen(RGB_TEST_GPIO48_PIN);
+  rgbDiagnosticSetCandidatePinsInput();
+  Serial.println("RGB TEST:");
+  Serial.println("RED = GPIO38 = DevKitC-1 v1.1");
+  Serial.println("GREEN = GPIO48 = earlier/original DevKitC-1 revision");
+  Serial.println("Type rgb off to clear.");
+}
 
+void stopRgbTestDiagnostic() {
   rgbDiagnosticShowOff(RGB_TEST_GPIO38_PIN);
   rgbDiagnosticShowOff(RGB_TEST_GPIO48_PIN);
   rgbDiagnosticSetCandidatePinsInput();
-  rgbTestStageStartMs = 0;
-  rgbTestState = RGB_TEST_GPIO38_START;
-}
-
-void updateRgbTestDiagnostic() {
-  unsigned long now = millis();
-
-  switch (rgbTestState) {
-    case RGB_TEST_IDLE:
-      return;
-
-    case RGB_TEST_GPIO38_START:
-      Serial.println("TESTING ONBOARD RGB ON GPIO38");
-      rgbDiagnosticShowBlue(RGB_TEST_GPIO38_PIN);
-      rgbTestStageStartMs = now;
-      rgbTestState = RGB_TEST_GPIO38_WAIT;
-      return;
-
-    case RGB_TEST_GPIO38_WAIT:
-      if ((now - rgbTestStageStartMs) >= RGB_TEST_ON_MS) {
-        rgbDiagnosticShowOff(RGB_TEST_GPIO38_PIN);
-        pinMode(RGB_TEST_GPIO38_PIN, INPUT);
-        rgbTestState = RGB_TEST_GAP_START;
-      }
-      return;
-
-    case RGB_TEST_GAP_START:
-      rgbTestStageStartMs = now;
-      rgbTestState = RGB_TEST_GAP_WAIT;
-      return;
-
-    case RGB_TEST_GAP_WAIT:
-      if ((now - rgbTestStageStartMs) >= RGB_TEST_GAP_MS) {
-        rgbTestState = RGB_TEST_GPIO48_START;
-      }
-      return;
-
-    case RGB_TEST_GPIO48_START:
-      Serial.println("TESTING ONBOARD RGB ON GPIO48");
-      rgbDiagnosticShowBlue(RGB_TEST_GPIO48_PIN);
-      rgbTestStageStartMs = now;
-      rgbTestState = RGB_TEST_GPIO48_WAIT;
-      return;
-
-    case RGB_TEST_GPIO48_WAIT:
-      if ((now - rgbTestStageStartMs) >= RGB_TEST_ON_MS) {
-        rgbDiagnosticShowOff(RGB_TEST_GPIO48_PIN);
-        rgbDiagnosticSetCandidatePinsInput();
-        Serial.println("RGB TEST COMPLETE");
-        Serial.println("Report which test made the onboard LED light.");
-        rgbTestState = RGB_TEST_IDLE;
-      }
-      return;
-  }
+  Serial.println("RGB TEST OFF");
 }
 
 void rgbDiagnosticSetCandidatePinsInput() {
@@ -1057,8 +1000,12 @@ void rgbDiagnosticSetCandidatePinsInput() {
   pinMode(RGB_TEST_GPIO48_PIN, INPUT);
 }
 
-void rgbDiagnosticShowBlue(uint8_t pin) {
-  rgbDiagnosticWritePixel(pin, 0, 0, 255);
+void rgbDiagnosticShowRed(uint8_t pin) {
+  rgbDiagnosticWritePixel(pin, 255, 0, 0);
+}
+
+void rgbDiagnosticShowGreen(uint8_t pin) {
+  rgbDiagnosticWritePixel(pin, 0, 255, 0);
 }
 
 void rgbDiagnosticShowOff(uint8_t pin) {
