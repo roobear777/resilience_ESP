@@ -10,6 +10,7 @@ void ledEngineUpdate(uint32_t nowMs);
 bool ledEngineIsPressureTestEnabled();
 void ledEngineSetPressureTestEnabled(bool enabled);
 void ledEngineSetAllGreenOverride(bool enabled);
+void ledEngineSetStartupHardwareTestEnabled(bool enabled);
 bool ledEngineIsZoneActive(uint8_t zoneIndex, uint32_t nowMs);
 LedColor ledEngineRenderPixel(uint16_t logicalPixelIndex, uint32_t nowMs);
 

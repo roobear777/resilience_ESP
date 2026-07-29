@@ -10,12 +10,12 @@
 #include "led_z3_midbody.h"
 #include "led_z4_rear.h"
 #include "led_z7_digestive.h"
-#include "led_z8_stations.h"
 
 #include <math.h>
 
 static bool ledPressureTestEnabled = false;
 static bool ledAllGreenOverride = false;
+static bool ledStartupHardwareTestEnabled = false;
 static uint32_t ledLastFrameMs = 0;
 static uint32_t ledFrameDeltaMs = 0;
 
@@ -46,6 +46,10 @@ static float ledWrap01(float value) {
 }
 
 static uint32_t ledScaledDeltaMs(uint32_t deltaMs) {
+  if (ledStartupHardwareTestEnabled) {
+    return deltaMs;
+  }
+
   const LedLookSettings &look = ledSettingsGlobalLook(LED_LOOK_ANIMATION);
   return static_cast<uint32_t>(
     (static_cast<uint64_t>(deltaMs) * look.speedPercent) / 100u
@@ -57,6 +61,10 @@ static uint32_t ledScaledNowMs(
   LedLookKind lookKind,
   uint8_t zoneIndex
 ) {
+  if (ledStartupHardwareTestEnabled) {
+    return nowMs;
+  }
+
   const LedLookSettings &globalLook = ledSettingsGlobalLook(lookKind);
   const LedLookSettings &zoneLook = ledSettingsZoneLook(lookKind, zoneIndex);
   uint16_t speedPercent = (
@@ -160,6 +168,17 @@ static LedColor ledApplySettingsToColor(
   uint8_t zoneIndex,
   bool active
 ) {
+  if (ledStartupHardwareTestEnabled) {
+    LedColor testColor = color;
+    testColor.v = ledClamp01(testColor.v);
+    if (testColor.v < 0.04f) {
+      testColor.v = 0.04f;
+    } else if (testColor.v > 0.15f) {
+      testColor.v = 0.15f;
+    }
+    return testColor;
+  }
+
   LedLookKind lookKind = active ? LED_LOOK_ANIMATION : LED_LOOK_AMBIENT;
   const LedLookSettings &globalLook = ledSettingsGlobalLook(lookKind);
   const LedLookSettings &zoneLook = ledSettingsZoneLook(lookKind, zoneIndex);
@@ -184,6 +203,7 @@ static LedColor ledApplySettingsToColor(
     * ledByteScale(zoneLook.brightness)
   );
   tuned = ledApplyBehaviorMode(tuned, logicalPixelIndex, nowMs, globalLook, zoneLook);
+
   return tuned;
 }
 
@@ -197,7 +217,6 @@ void ledEngineBegin() {
   ledZ4RearBegin();
   ledLegsBegin();
   ledZ7DigestiveBegin();
-  ledZ8StationsBegin();
 }
 
 void ledEngineUpdate(uint32_t nowMs) {
@@ -216,7 +235,6 @@ void ledEngineUpdate(uint32_t nowMs) {
   ledZ4RearUpdate(scaledDeltaMs);
   ledLegsUpdate(scaledDeltaMs);
   ledZ7DigestiveUpdate(scaledDeltaMs);
-  ledZ8StationsUpdate(scaledDeltaMs);
 }
 
 bool ledEngineIsPressureTestEnabled() {
@@ -231,8 +249,12 @@ void ledEngineSetAllGreenOverride(bool enabled) {
   ledAllGreenOverride = enabled;
 }
 
+void ledEngineSetStartupHardwareTestEnabled(bool enabled) {
+  ledStartupHardwareTestEnabled = enabled;
+}
+
 bool ledEngineIsZoneActive(uint8_t zoneIndex, uint32_t nowMs) {
-  if (ledPressureTestEnabled) {
+  if (ledPressureTestEnabled || ledStartupHardwareTestEnabled) {
     return true;
   }
 
@@ -304,15 +326,6 @@ LedColor ledEngineRenderPixel(uint16_t logicalPixelIndex, uint32_t nowMs) {
     uint32_t renderNowMs = ledScaledNowMs(nowMs, active ? LED_LOOK_ANIMATION : LED_LOOK_AMBIENT, zoneIndex);
     LedColor color = ledZ7DigestiveRender(localIndex, active, renderNowMs);
     return ledApplySettingsToColor(color, logicalPixelIndex, renderNowMs, zoneIndex, active);
-  }
-
-  if (zoneIndex == LED_ZONE_Z8_STATIONS) {
-    uint16_t localIndex = logicalPixelIndex - LED_ZONE_START[LED_ZONE_Z8_STATIONS];
-    uint8_t station = ledZ8StationFor(localIndex);
-    bool stationActive = ledEngineIsZoneActive(station, nowMs);
-    uint32_t renderNowMs = ledScaledNowMs(nowMs, stationActive ? LED_LOOK_ANIMATION : LED_LOOK_AMBIENT, zoneIndex);
-    LedColor color = ledZ8StationsRender(localIndex, stationActive, renderNowMs);
-    return ledApplySettingsToColor(color, logicalPixelIndex, renderNowMs, zoneIndex, stationActive);
   }
 
   return LED_COLOR_BLACK;

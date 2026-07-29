@@ -1,68 +1,50 @@
 # Tardi Web Controller
 
-The ESP32 hosts the Tardi LED web controller while powered.
-
 ```text
-SSID:     TARDI-LED
+SSID: TARDI-LED
 Password: tardigrade
-Address:  http://192.168.4.1
+Address: http://192.168.4.1
 ```
 
-The Wi-Fi AP and captive portal start automatically after boot. No physical setup button is required for web access.
+The AP and captive portal start automatically. No physical setup button is
+required.
 
-## Purpose
+The controller serves one deterministic gzip-compressed static page. The page
+loads live connection state and all current/saved LED values from the existing
+`/api/status` endpoint when it opens and every five seconds afterward.
 
-The web page controls global LED look/feel settings for the sculpture.
+## Scope
 
-It does not include:
+The page edits LED appearance only:
 
-- FIRE controls
-- relay controls
-- hardware test controls
-- per-channel Output Expander test controls
+- whole sculpture or selected zone;
+- ambient or active animation look;
+- brightness and colour intensity;
+- speed, palette, and behavior;
+- animation duration.
 
-## Controls
+It has no FIRE, relay, or physical hardware-test controls.
 
-Current web controls include:
+## Save and Reset
 
-- target: whole sculpture, ambient, animation, or a selected zone
-- brightness
-- colour intensity / saturation
-- speed
-- palette
-- behaviour
-- animation duration
+- Live edits apply in RAM.
+- `SAVE` persists the current LED settings to flash.
+- `RESET` loads defaults into RAM until saved.
+- Power cycling reloads the last saved compatible settings.
 
-The animation-duration control applies to normal button-triggered LED animations and Full Body LED Animation. It does not change FIRE pulse timing or the Head Poof FIRE cutoff.
+## Output Status
 
-## Save / Reset
+The connection card reports:
 
-Live changes apply immediately in RAM.
+- `ON` during normal direct output;
+- `ON / SETTINGS DARK` when current ambient brightness multipliers produce an entirely dark sculpture;
+- whether the first `FastLED.show()` call has been attempted;
+- current mode and direct lane GPIOs.
 
-```text
-SAVE  = persist current LED settings to flash
-RESET = restore defaults in RAM until saved
-```
+The five-second moving LED hardware check finishes before the AP/web server
+starts, so it is reported over USB Serial rather than through the web page.
 
-Moving sliders or changing selectors does not constantly write flash.
+The internal `/api/mode` endpoint accepts `off`, `animation`, and `solid`,
+but the normal page does not expose hardware-test buttons.
 
-## Captive Portal
-
-The captive portal routes make phones more likely to offer the control page after joining `TARDI-LED`.
-
-Manual access remains:
-
-```text
-http://192.168.4.1
-```
-
-## Safety
-
-The web page must respect the existing firmware output gates and runtime paths.
-
-It must not bypass:
-
-- FIRE safety behaviour
-- Output Expander guard/state
-- PBDriverAdapter runtime logic
-- button/FIRE/Head Poof timing
+Web code must never alter FIRE pins, polarity, timing, or Head Poof behavior.

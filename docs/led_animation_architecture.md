@@ -1,122 +1,67 @@
 # LED Animation Architecture
 
-The ESP32 firmware now contains the software-side LED render path for Z1-Z8. The Pixelblaze source is reference material only; it is not runtime code.
-
-## Rendering Model
+## Pipeline
 
 ```text
-logical pixel index
--> zone lookup
+accepted controller event
+-> ledActiveUntil[zone]
 -> zone renderer
--> LedColor HSV
--> LED settings scaling
--> LedRgbColor RGB
--> Output Expander callback
+-> HSV LedColor
+-> palette/behavior/brightness settings
+-> RGB CRGB frame
+-> seven FastLED LCD_CLOCKLESS channels (GRB wire order)
 ```
 
-The LED engine does not read physical buttons directly and does not touch FIRE pins. The controller owns accepted button/FIRE events and calls LED trigger helpers.
+The controller owns inputs, FIRE, and accepted trigger events. The LED engine
+owns animation state and pixel rendering only.
 
-## Ambient and Active State
+## State Model
 
-Ambient rendering is continuous for inactive zones.
-
-Active rendering is controlled by trigger windows:
+Inactive zones render ambient animation continuously. Accepted press events set
+a time window:
 
 ```text
 zoneActive = now < ledActiveUntil[zone]
 ```
 
-Do not copy the Pixelblaze held-button model into ESP32 firmware.
-
-## Trigger Mapping
-
-```text
-Button 1 -> Z1 / Mouth
-Button 2 -> Z2 / Shoulder
-Button 3 -> Z3 / Midbody
-Button 4 -> Z4 / Rear
-Button 5 -> Z5 / Front legs
-Button 6 -> Z6 / Back legs
-Button 7 -> Z7 / Digestive
-```
-
-Button 8 alone does not trigger an independent LED zone.
-
-Z8 is the button-station LED zone. It mirrors/summarizes the Z1-Z7 station states and is also activated by Full Body LED Animation.
-
-## Animation Duration
-
-Normal zone triggers and Full Body LED Animation use the same saved global animation duration.
-
-Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient.
-
-Default:
-
-```text
-10 seconds
-```
-
-After the duration expires, zones return to ambient rendering.
-
-This LED duration does not change the 500 ms FIRE pulse or the 10 second Head Poof FIRE cutoff.
-
-## LED Settings
-
-Current saved LED settings include:
-
-- master brightness
-- colour intensity / saturation
-- speed
-- palette
-- behaviour
-- ambient level
-- active level
-- per-zone values
-- global animation duration
-
-The web controller can edit these settings. Live changes apply in RAM; `SAVE` persists them.
+Active windows use the saved global animation duration, default 10 seconds.
+They do not depend on a button remaining held.
 
 ## Logical Layout
 
-| Zone | Physical LEDs | Pixels | Logical start |
-|---|---|---:|---:|
-| Z1 | Mouth LEDs | 208 | 0 |
-| Z2 | Shoulder LEDs | 325 | 208 |
-| Z3 | Midbody LEDs | 400 | 533 |
-| Z4 | Rear LEDs | 300 | 933 |
-| Z5 | Front leg LEDs | 300 | 1233 |
-| Z6 | Back leg LEDs | 300 | 1533 |
-| Z7 | Digestive LEDs | 75 | 1833 |
-| Z8 | Button station LEDs | 100 | 1908 |
+| Zone | Pixels | Start | End |
+|---:|---:|---:|---:|
+| Z1 | 208 | 0 | 207 |
+| Z2 | 325 | 208 | 532 |
+| Z3 | 400 | 533 | 932 |
+| Z4 | 300 | 933 | 1232 |
+| Z5 | 300 | 1233 | 1532 |
+| Z6 | 300 | 1533 | 1832 |
+| Z7 | 75 | 1833 | 1907 |
 
-Total logical pixels:
+Total: 1,908 logical animation pixels. Z8/button-station LEDs are absent from
+the active engine.
 
-```text
-2008
-```
+Z3 uses its full eight-ring, 400-pixel geometry. All 400 pixels participate in
+the existing Z3 renderer.
 
-## Output
+## Settings
 
-The live output path uses:
+Saved appearance includes master, ambient, active, global-look, and per-zone
+brightness; saturation; speed; palette; behavior; and animation duration.
 
-```text
-ESP32-S3 -> PBDriverAdapter -> Pixelblaze Output Expander -> LED channels
-```
+Brightness factors multiply. A zero factor can intentionally make part or all
+of the saved look dark. The five-second startup hardware check temporarily
+bypasses all saved brightness factors and saved speed, then normal rendering
+resumes without modifying the settings. Web/Serial status reports a completely
+dark saved ambient configuration.
 
-Current PBChannel colour metadata is RGB:
+## Output Modes
 
-```text
-redi   = 0
-greeni = 1
-bluei  = 2
-```
+- `ANIMATION`: normal automatic operation and boot default
+- `OFF`: black output
+- `VALIDATE_SOLID`: fixed dim white
+- `VALIDATE_CHANNEL`: one selected lane
+- `VALIDATE_COLOR`: fixed red, green, or blue
 
-## Remaining Physical Checks
-
-These are hardware/deployment checks, not missing animation-architecture pieces:
-
-- final animation timing and feel on the sculpture
-- physical channel order
-- real LED colour appearance under sculpture power
-- power injection and grounding under load
-- Z7 physical wiring versus the current 75 logical-pixel model
+Modes are runtime-only and are not restored after reboot.

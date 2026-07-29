@@ -4,8 +4,9 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
-#include "led_expander_output.h"
+#include "led_direct_output.h"
 #include "led_settings.h"
+#include "web_setup_page_gzip.h"
 
 static const char *WEB_SETUP_SSID = "TARDI-LED";
 static const char *WEB_SETUP_PASSWORD = "tardigrade";
@@ -17,7 +18,11 @@ static bool webSetupActive = false;
 static bool webSetupDnsActive = false;
 
 static String webSetupLiveOutputLabel() {
-  return ledExpanderOutputRealOutputAllowed() ? "ON" : "SIM ONLY";
+  if (!ledDirectOutputAllowed()) {
+    return "SIM ONLY";
+  }
+
+  return ledSettingsAmbientIsCompletelyDark() ? "ON / SETTINGS DARK" : "ON";
 }
 
 static bool webSetupParseByteValue(const String &text, uint8_t &value) {
@@ -76,29 +81,6 @@ static uint8_t webSetupPercentToByte(uint8_t percent) {
   );
 }
 
-static const char *webSetupZoneName(uint8_t zoneIndex) {
-  switch (zoneIndex) {
-    case 0:
-      return "Mouth";
-    case 1:
-      return "Shoulder";
-    case 2:
-      return "Midbody";
-    case 3:
-      return "Rear";
-    case 4:
-      return "Front Legs";
-    case 5:
-      return "Back Legs";
-    case 6:
-      return "Digestive";
-    case 7:
-      return "Stations";
-    default:
-      return "Zone";
-  }
-}
-
 static void webSetupAppendLookJson(String &json, const LedLookSettings &look) {
   json += "{\"brightnessPercent\":";
   json += String(webSetupByteToPercent(look.brightness));
@@ -146,15 +128,15 @@ static String webSetupJsonStatus() {
   json += ",\"liveOutput\":\"";
   json += webSetupLiveOutputLabel();
   json += "\",\"realOutputAllowed\":";
-  json += ledExpanderOutputRealOutputAllowed() ? "true" : "false";
-  json += ",\"realOutputStarted\":";
-  json += ledExpanderOutputRealOutputStarted() ? "true" : "false";
+  json += ledDirectOutputAllowed() ? "true" : "false";
+  json += ",\"firstShowAttempted\":";
+  json += ledDirectOutputFirstShowAttempted() ? "true" : "false";
+  json += ",\"savedAmbientDark\":";
+  json += ledSettingsAmbientIsCompletelyDark() ? "true" : "false";
   json += ",\"mode\":\"";
-  json += ledExpanderOutputModeName();
-  json += "\",\"tx\":";
-  json += String(ledExpanderOutputPlannedTxPin());
-  json += ",\"baud\":";
-  json += String(ledExpanderOutputPlannedBaudRate());
+  json += ledDirectOutputModeName();
+  json += "\",\"ledBackend\":\"FastLED LCD_CLOCKLESS\"";
+  json += ",\"ledPins\":\"1,2,39,40,41,42,43\"";
   json += ",\"settings\":{\"brightness\":";
   json += String(settings.masterBrightness);
   json += ",\"brightnessPercent\":";
@@ -203,125 +185,15 @@ static String webSetupJsonStatus() {
   return json;
 }
 
-static String webSetupHtmlPage() {
-  const LedLookSettings &initialLook = ledSettingsGlobalLook(LED_LOOK_AMBIENT);
-  String html;
-  html.reserve(10000);
-
-  html += F("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-  html += F("<title>Tardi Controller</title><style>");
-  html += F("body{margin:0;background:#090d10;color:#eef7f6;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;font-size:17px;}");
-  html += F("main{max-width:560px;margin:0 auto;padding:20px 16px 32px;}h1{font-size:30px;margin:0 0 8px;line-height:1.05;letter-spacing:.04em;}h2{font-size:21px;margin:28px 0 10px;color:#4dd6d0;letter-spacing:.05em;text-transform:uppercase;}");
-  html += F(".sub{color:#9db2b7;margin:8px 0 12px;line-height:1.35}.hint{color:#4dd6d0;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.small{font-size:14px;color:#9db2b7;line-height:1.35}");
-  html += F(".card{border:1px solid #21444a;border-radius:8px;padding:17px;margin:14px 0;background:#121a1f;box-shadow:0 0 0 1px #0b1519 inset,0 8px 26px rgba(0,0,0,.28);}");
-  html += F(".head{background:#0f1b21;border-color:#2c6268}.chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}.chip{border:1px solid #2c6268;background:#081114;color:#d8ffff;border-radius:999px;padding:7px 10px;font-size:13px;font-weight:800;letter-spacing:.03em}");
-  html += F(".row{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid #223038;padding:10px 0}.row:last-child{border-bottom:0}");
-  html += F(".k{color:#9db2b7}.v{text-align:right;font-weight:750}.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#070b0d;padding:4px 7px;border-radius:5px;}");
-  html += F(".ctrl{margin:20px 0 24px}.ctrl label{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:10px;font-size:18px}.ctrl strong{font-size:21px;color:#4dd6d0}.ctrl input{width:100%;height:34px;accent-color:#4dd6d0}");
-  html += F("select{width:100%;min-height:48px;border:1px solid #2c6268;border-radius:8px;background:#081114;color:#eef7f6;font-size:18px;font-weight:750;padding:10px;margin-top:8px}");
-  html += F(".buttons{display:grid;grid-template-columns:1fr;gap:12px}.buttons button,.wide{border:0;border-radius:8px;min-height:50px;padding:15px;background:#1f3037;color:#eef7f6;font-weight:800;font-size:16px}.primary{background:#4dd6d0!important;color:#081114!important}.danger{background:#63333d!important}.status{min-height:24px;color:#a7ff83;margin-top:14px;font-weight:700}");
-  html += F(".target{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:18px}.target label{display:block;color:#9db2b7;font-size:14px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}");
-  html += F(".savebar{border-top:1px solid #223038;margin-top:12px;padding-top:18px}");
-  html += F("@media(min-width:430px){.buttons{grid-template-columns:1fr 1fr}.buttons button{min-height:54px}}");
-  html += F("</style></head><body><main>");
-  html += F("<h1>Tardi Controller</h1>");
-  html += F("<p class=\"sub\">You are connected to Tardi Controller. If this window disappears, open Safari/Chrome and go to http://192.168.4.1</p>");
-
-  html += F("<h2>Global</h2><section class=\"card\">");
-  html += F("<div class=\"target\"><label>Editing<select id=\"lookKind\" onchange=\"selectLookTarget()\"><option value=\"ambient\">Ambient</option><option value=\"animation\">Animation</option></select></label>");
-  html += F("<label>Area<select id=\"lookArea\" onchange=\"selectLookTarget()\"><option value=\"whole\">Whole Sculpture</option>");
-  for (uint8_t zone = 0; zone < LED_LOGICAL_ZONE_COUNT; zone++) {
-    html += F("<option value=\"");
-    html += String(zone);
-    html += F("\">");
-    html += webSetupZoneName(zone);
-    html += F("</option>");
-  }
-  html += F("</select></label></div>");
-  html += F("<div class=\"ctrl\"><label><span>Brightness</span><strong id=\"brightnessPercentValue\">");
-  html += String(webSetupByteToPercent(initialLook.brightness));
-  html += F("%</strong></label><input id=\"brightnessPercent\" type=\"range\" min=\"0\" max=\"100\" value=\"");
-  html += String(webSetupByteToPercent(initialLook.brightness));
-  html += F("\" oninput=\"queueSetting('brightnessPercent',this.value)\" onchange=\"sendSetting('brightnessPercent',this.value)\"></div>");
-  html += F("<div class=\"ctrl\"><label><span>Colour Intensity</span><strong id=\"saturationPercentValue\">");
-  html += String(webSetupByteToPercent(initialLook.saturation));
-  html += F("%</strong></label><input id=\"saturationPercent\" type=\"range\" min=\"0\" max=\"100\" value=\"");
-  html += String(webSetupByteToPercent(initialLook.saturation));
-  html += F("\" oninput=\"queueSetting('saturationPercent',this.value)\" onchange=\"sendSetting('saturationPercent',this.value)\"></div>");
-  html += F("<div class=\"ctrl\"><label><span>Speed</span><strong id=\"speedValue\">");
-  html += String(initialLook.speedPercent);
-  html += F("%</strong></label><input id=\"speed\" type=\"range\" min=\"0\" max=\"200\" value=\"");
-  html += String(initialLook.speedPercent);
-  html += F("\" oninput=\"queueSetting('speed',this.value)\" onchange=\"sendSetting('speed',this.value)\"></div>");
-  html += F("<div class=\"ctrl\"><label><span>Animation duration</span><strong id=\"animationDurationSecondsValue\">");
-  html += String(ledSettingsGet().animationDurationSeconds);
-  html += F(" seconds</strong></label><input id=\"animationDurationSeconds\" type=\"range\" min=\"1\" max=\"60\" value=\"");
-  html += String(ledSettingsGet().animationDurationSeconds);
-  html += F("\" oninput=\"queueGlobalSetting('animationDurationSeconds',this.value)\" onchange=\"sendGlobalSetting('animationDurationSeconds',this.value)\"></div>");
-  html += F("<div class=\"ctrl\"><label><span>Colour Palette</span><strong id=\"paletteValue\">");
-  html += ledSettingsPaletteName(initialLook.paletteMode);
-  html += F("</strong></label><select id=\"palette\" onchange=\"sendSetting('palette',this.value)\">");
-  html += F("<option value=\"default\">Default</option><option value=\"warm\">Warm</option><option value=\"cool\">Cool</option><option value=\"ember\">Ember</option><option value=\"ocean\">Ocean</option><option value=\"rainbow\">Rainbow</option></select></div>");
-  html += F("<div class=\"ctrl\"><label><span>Behaviour</span><strong id=\"behaviorValue\">");
-  html += ledSettingsBehaviorName(initialLook.behaviorMode);
-  html += F("</strong></label><select id=\"behavior\" onchange=\"sendSetting('behavior',this.value)\">");
-  html += F("<option value=\"normal\">Default</option><option value=\"calm\">Calm</option><option value=\"energetic\">Energetic</option><option value=\"sparkle\">Sparkle</option></select></div>");
-  html += F("<div class=\"savebar\"><button onclick=\"saveSettings()\" class=\"wide primary\">SAVE</button>");
-  html += F("<div class=\"status\" id=\"message\"></div></div></section>");
-
-  html += F("<h2>Reset</h2><section class=\"card\">");
-  html += F("<button onclick=\"resetDefaults()\" class=\"wide\">RESET</button>");
-  html += F("<p class=\"small\">Reset is temporary until you save.</p></section>");
-
-  html += F("<h2>Connection</h2><section class=\"card head\">");
-  html += F("<div class=\"hint\">Local sculpture link</div>");
-  html += F("<div class=\"sub\">Controller hotspot active</div>");
-  html += F("<div class=\"chips\"><span class=\"chip\" id=\"liveOutput\">");
-  html += webSetupLiveOutputLabel();
-  html += F("</span><span class=\"chip\">Mode: <span id=\"mode\">");
-  html += ledExpanderOutputModeName();
-  html += F("</span></span><span class=\"chip\">");
-  html += WEB_SETUP_SSID;
-  html += F("</span><span class=\"chip\">");
-  html += webSetupIpAddress();
-  html += F("</span></div><div class=\"row\"><span class=\"k\">Started</span><span class=\"v\" id=\"started\">");
-  html += ledExpanderOutputRealOutputStarted() ? "YES" : "NO";
-  html += F("</span></div><div class=\"row\"><span class=\"k\">LED UART</span><span class=\"v\">GPIO");
-  html += String(ledExpanderOutputPlannedTxPin());
-  html += F(" / ");
-  html += String(ledExpanderOutputPlannedBaudRate());
-  html += F("</span></div><div class=\"row\"><span class=\"k\">Clients</span><span class=\"v\">");
-  html += String(webSetupClientCount());
-  html += F("</span></div></section>");
-
-  html += F("<h2>Serial Commands</h2><section class=\"card\">");
-  html += F("<p><span class=\"cmd\">led settings</span></p>");
-  html += F("<p><span class=\"cmd\">led set brightness N</span></p>");
-  html += F("<p><span class=\"cmd\">led save</span></p>");
-  html += F("<p><span class=\"cmd\">led defaults save</span></p>");
-  html += F("</section><script>");
-  html += F("let timers={},lastStatus=null;function msg(t){document.getElementById('message').textContent=t||'';}");
-  html += F("function label(k,v){if(k=='animationDurationSeconds')return v+' seconds';if(k.endsWith('Percent')||k=='speed')return v+'%';return v;}function val(id,v){let e=document.getElementById(id+'Value');if(e)e.textContent=label(id,v);}");
-  html += F("function post(u){return fetch(u,{method:'POST'}).then(r=>r.text()).then(t=>{msg(t);refresh();return t;}).catch(e=>msg('Request failed'));}");
-  html += F("function targetQuery(){return 'look='+encodeURIComponent(document.getElementById('lookKind').value)+'&area='+encodeURIComponent(document.getElementById('lookArea').value);}");
-  html += F("function selectedLook(s){let k=document.getElementById('lookKind').value,a=document.getElementById('lookArea').value,g=s.settings.looks[k];return a=='whole'?g.whole:g.zones[Number(a)];}");
-  html += F("function applyLookControls(look){['brightnessPercent','saturationPercent','speed','palette','behavior'].forEach(k=>{document.getElementById(k).value=look[k];val(k,look[k]);});}");
-  html += F("function selectLookTarget(){if(lastStatus)applyLookControls(selectedLook(lastStatus));}");
-  html += F("function queueSetting(k,v){val(k,v);let q=targetQuery();clearTimeout(timers[k]);timers[k]=setTimeout(()=>sendSetting(k,v,q),250);}");
-  html += F("function sendSetting(k,v,q){val(k,v);return post('/api/settings?'+(q||targetQuery())+'&'+encodeURIComponent(k)+'='+encodeURIComponent(v));}");
-  html += F("function queueGlobalSetting(k,v){val(k,v);clearTimeout(timers[k]);timers[k]=setTimeout(()=>sendGlobalSetting(k,v),250);}");
-  html += F("function sendGlobalSetting(k,v){val(k,v);return post('/api/settings?'+encodeURIComponent(k)+'='+encodeURIComponent(v));}");
-  html += F("function saveSettings(){return fetch('/api/save',{method:'POST'}).then(r=>r.text()).then(t=>{msg(t=='Saved'?'Saved':t);refresh();return t;}).catch(e=>msg('Request failed'));}");
-  html += F("function resetDefaults(){return post('/api/reset-defaults').then(refresh);}");
-  html += F("function applyStatus(s){lastStatus=s;document.getElementById('liveOutput').textContent=s.liveOutput;document.getElementById('mode').textContent=s.mode;document.getElementById('started').textContent=s.realOutputStarted?'YES':'NO';document.getElementById('animationDurationSeconds').value=s.settings.animationDurationSeconds;val('animationDurationSeconds',s.settings.animationDurationSeconds);applyLookControls(selectedLook(s));}");
-  html += F("function refresh(){return fetch('/api/status').then(r=>r.json()).then(applyStatus).catch(e=>{});}refresh();setInterval(refresh,5000);");
-  html += F("</script>");
-  html += F("</main></body></html>");
-  return html;
-}
-
 static void webSetupHandleRoot() {
-  webSetupServer.send(200, "text/html", webSetupHtmlPage());
+  webSetupServer.sendHeader("Content-Encoding", "gzip");
+  webSetupServer.sendHeader("Cache-Control", "no-store");
+  webSetupServer.send_P(
+    200,
+    "text/html",
+    reinterpret_cast<const char *>(WEB_SETUP_PAGE_GZIP),
+    WEB_SETUP_PAGE_GZIP_SIZE
+  );
 }
 
 static void webSetupHandleCaptivePortal() {
@@ -340,7 +212,7 @@ static void webSetupHandleSettings() {
 
   if (webSetupServer.hasArg("look") || webSetupServer.hasArg("area")) {
     if (!webSetupServer.hasArg("look") || !webSetupServer.hasArg("area")) {
-      webSetupServer.send(400, "text/plain", "Use: look=ambient|animation&area=whole|0..7");
+      webSetupServer.send(400, "text/plain", "Use: look=ambient|animation&area=whole|0..6");
       return;
     }
 
@@ -356,10 +228,14 @@ static void webSetupHandleSettings() {
 
     if (area == "whole") {
       targetLook = &ledSettingsMutableGlobalLook(lookKind);
-    } else if (area.length() == 1 && area[0] >= '0' && area[0] <= '7') {
+    } else if (
+      area.length() == 1
+      && area[0] >= '0'
+      && area[0] < static_cast<char>('0' + LED_LOGICAL_ZONE_COUNT)
+    ) {
       targetLook = &ledSettingsMutableZoneLook(lookKind, static_cast<uint8_t>(area[0] - '0'));
     } else {
-      webSetupServer.send(400, "text/plain", "Invalid area. Use whole or 0..7.");
+      webSetupServer.send(400, "text/plain", "Invalid area. Use whole or 0..6.");
       return;
     }
   }
@@ -506,7 +382,7 @@ static void webSetupHandleSettings() {
 
   if (webSetupServer.hasArg("zone") || webSetupServer.hasArg("value")) {
     if (!webSetupServer.hasArg("zone") || !webSetupServer.hasArg("value")) {
-      webSetupServer.send(400, "text/plain", "Use: zone=0..7&value=0..255");
+      webSetupServer.send(400, "text/plain", "Use: zone=0..6&value=0..255");
       return;
     }
 
@@ -516,10 +392,10 @@ static void webSetupHandleSettings() {
     if (
       zoneArg.length() != 1
       || zoneArg[0] < '0'
-      || zoneArg[0] > '7'
+      || zoneArg[0] >= static_cast<char>('0' + LED_LOGICAL_ZONE_COUNT)
       || !webSetupParseByteValue(webSetupServer.arg("value"), value)
     ) {
-      webSetupServer.send(400, "text/plain", "Use: zone=0..7&value=0..255");
+      webSetupServer.send(400, "text/plain", "Use: zone=0..6&value=0..255");
       return;
     }
 
@@ -561,11 +437,11 @@ static void webSetupHandleMode() {
   bool ok = false;
 
   if (value == "off") {
-    ok = ledExpanderOutputSetMode(LED_OUTPUT_OFF, Serial);
+    ok = ledDirectOutputSetMode(LED_OUTPUT_OFF, Serial);
   } else if (value == "animation") {
-    ok = ledExpanderOutputSetMode(LED_OUTPUT_ANIMATION, Serial);
+    ok = ledDirectOutputSetMode(LED_OUTPUT_ANIMATION, Serial);
   } else if (value == "solid") {
-    ok = ledExpanderOutputSetMode(LED_OUTPUT_VALIDATE_SOLID, Serial);
+    ok = ledDirectOutputSetMode(LED_OUTPUT_VALIDATE_SOLID, Serial);
   } else {
     webSetupServer.send(400, "text/plain", "Use: value=off|animation|solid");
     return;

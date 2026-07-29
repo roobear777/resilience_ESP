@@ -1,187 +1,84 @@
 # Current Baseline
 
-This file records the current live sculpture baseline for the Tardi Controller.
+This is the authoritative behavior summary for the current live firmware.
 
-Detailed references:
+## Controller
 
 ```text
-docs/gpio_schema.md
-docs/pin_mapping.md
-docs/interaction_logic.md
-docs/led_animation_architecture.md
-docs/led_output_expander.md
-docs/web_setup_interface.md
+Board: ESP32-S3-DevKitC-1-N8R8
+Arduino core: 3.3.10
+USB CDC On Boot: Enabled
+Serial: native USB, 115200 baud
 ```
 
-Historical working notes live under `docs/archive/`.
+The ESP32 owns button debounce, accepted interactions, FIRE outputs and
+cutoffs, LED rendering, direct LED transmission, saved LED settings, Serial
+diagnostics, and the Wi-Fi controller.
 
-## Controller Target
+## Live Configuration
 
-```text
-Board:  ESP32-S3-DevKitC-1-N8R8
-Module: ESP32-S3-WROOM-1
-Arduino IDE board option: ESP32S3 Dev Module
-USB Serial/debug baud: 115200
-```
-
-The ESP32-S3 owns:
-
-- button debounce and accepted button events
-- FIRE1-FIRE9 active-LOW outputs
-- Head Poof detection and cutoff
-- OLED status display
-- Wi-Fi web controller
-- LED animation rendering
-- Pixelblaze Output Expander UART output
-
-The ESP32 does not power LED loads, solenoids, relays, or high-current sculpture hardware directly.
-
-## Live Build State
-
-Current live-build expectations:
-
-```text
-ENABLE_REAL_PB_EXPANDER_OUTPUT = true
+```cpp
+ENABLE_REAL_FASTLED_OUTPUT = true
 FIRE_OUTPUTS_ENABLED = true
 USE_INTERNAL_PULLDOWNS = false
 ```
 
-That means:
+OLED support and Output Expander output are absent from the active firmware.
+No command or setup button is required for normal operation.
 
-- real Output Expander output is permitted
-- real FIRE output pins are active
-- the button inputs rely on external pull-down resistors
-- the LED runtime starts in normal animation mode after boot
-- ambient LED rendering runs continuously for inactive zones
-- the Wi-Fi web controller is available while the ESP32 is powered
+## Boot
 
-Normal upload through Arduino IDE should use the Upload button. BOOT/RESET button handling is only a recovery step if upload stalls at `Connecting...`.
+1. FIRE pins are driven HIGH/idle.
+2. Saved LED settings are loaded, or full defaults are used.
+3. Seven `LCD_CLOCKLESS` lanes are registered.
+4. A five-second moving LED hardware check runs at temporary 4–15% brightness
+   and fixed 100% speed, independent of saved brightness and speed settings.
+5. Normal rendering resumes immediately from the untouched saved settings.
+6. The Wi-Fi AP starts and normal loop operation begins.
 
-## Button Inputs
+First-show diagnostics report channel routing and heap state. Physical LED
+behavior must still be confirmed on hardware.
 
-There are 8 active-HIGH button inputs:
+## Inputs and FIRE
 
-| Button | GPIO |
-|---:|---:|
-| 1 | GPIO4 |
-| 2 | GPIO5 |
-| 3 | GPIO6 |
-| 4 | GPIO7 |
-| 5 | GPIO15 |
-| 6 | GPIO16 |
-| 7 | GPIO17 |
-| 8 | GPIO18 |
+Buttons are active-HIGH and use external 10k pull-downs.
 
-Button wiring:
+| Button | GPIO | Normal FIRE | LED |
+|---:|---:|---:|---|
+| 1 | 4 | FIRE1 | Z1 Mouth |
+| 2 | 5 | FIRE2 | Z2 Shoulder |
+| 3 | 6 | FIRE3 | Z3 Midbody |
+| 4 | 7 | FIRE4 | Z4 Rear |
+| 5 | 15 | FIRE5 | Z5 Front legs |
+| 6 | 16 | FIRE6 | Z6 Back legs |
+| 7 | 17 | FIRE7 | Z7 Digestive |
+| 8 | 18 | FIRE8 | none |
 
-```text
-released = LOW through external 10k pull-down
-pressed  = HIGH / 3.3V
-```
+Normal FIRE1–FIRE8 behavior is a 100 ms pulse on press, repeated every
+1,000 ms while held. FIRE outputs are active-LOW.
 
-Do not connect ESP32 GPIO inputs to 5V logic.
+Button 1 + Button 8 requests FIRE9/Head Poof while held, with a 10-second
+cutoff, and activates all seven LED zones.
 
-## FIRE Outputs
+Holding all eight buttons has priority: FIRE1–FIRE9 pulse together for 500 ms
+once, normal repeats and Head Poof are suppressed, and release of at least one
+button is required to re-arm.
 
-FIRE outputs are active-LOW:
+## LEDs
 
-```text
-HIGH = idle / relay inactive
-LOW  = trigger / relay active
-```
+The direct output map is defined in `docs/direct_led_output.md`. The animation
+engine and FastLED frame contain 1,908 pixels. Z3 is a full 400-pixel logical
+and physical animation lane. Ambient rendering is continuous. Accepted button
+events activate zones for the saved animation duration, which defaults to 10
+seconds.
 
-| FIRE output | GPIO |
-|---:|---:|
-| FIRE1 | GPIO8 |
-| FIRE2 | GPIO9 |
-| FIRE3 | GPIO10 |
-| FIRE4 | GPIO11 |
-| FIRE5 | GPIO12 |
-| FIRE6 | GPIO13 |
-| FIRE7 | GPIO14 |
-| FIRE8 | GPIO21 |
-| FIRE9 / Head Poof | GPIO47 |
+LED output mode and validation modes are runtime-only. Reboot always returns
+to automatic animation. Saved appearance settings persist across power cycles
+only after `SAVE`.
 
-Normal FIRE1-FIRE8 pulse duration:
+## Web
 
-```text
-500 ms
-```
-
-Head Poof FIRE cutoff:
-
-```text
-10 seconds maximum while Button 1 + Button 8 are held
-```
-
-The LED animation duration is separate from FIRE timing.
-
-## LED Behaviour
-
-Normal live LED behaviour:
-
-- ambient LEDs start automatically after boot
-- Button 1-7 trigger their matching LED zones
-- triggered zones animate for the configured global animation duration
-- triggered zones return to ambient when that duration expires
-- Button 8 alone triggers FIRE8 but does not directly trigger an independent LED zone
-- Z8 is the button-station LED zone; it mirrors/summarizes Z1-Z7 activity and participates in Full Body LED Animation
-- Button 1 + Button 8 = Head Poof / FIRE9 + Full Body LED Animation
-- Full Body LED Animation means all LED zones Z1-Z8 are active together for the saved global animation duration, then return to ambient
-
-Default LED animation duration:
-
-```text
-10 seconds
-```
-
-The web controller can change and save this duration. It affects normal zone animations and Full Body LED Animation. It does not change the 500 ms FIRE pulse or 10 second Head Poof FIRE cutoff.
-
-## Output Expander
-
-Physical LED output target:
-
-```text
-ESP32-S3 GPIO39 TX -> Pixelblaze Output Expander DAT -> LED zones
-ESP32 GND          -> Output Expander GND
-UART baud          = 2000000
-```
-
-The UART is one-way from ESP32 TX to the Output Expander DAT input. `CLK` is unused for WS2811/WS2812-style LEDs.
-
-Current channel map:
-
-| Channel | Physical LEDs | Pixels | Logical start |
-|---:|---|---:|---:|
-| Ch0 | Button station LEDs | 100 | 1908 |
-| Ch1 | Mouth LEDs | 208 | 0 |
-| Ch2 | Shoulder LEDs | 325 | 208 |
-| Ch3 | Midbody LEDs | 400 | 533 |
-| Ch4 | Rear LEDs | 300 | 933 |
-| Ch5 | Front leg LEDs | 300 | 1233 |
-| Ch6 | Back leg LEDs | 300 | 1533 |
-| Ch7 | Digestive LEDs | 75 | 1833 |
-
-Mouth / Zone 1 is on Ch1, not Ch0.
-
-Current PBDriverAdapter channel colour metadata is RGB:
-
-```text
-redi   = 0
-greeni = 1
-bluei  = 2
-```
-
-## Web Controller
-
-The ESP32 starts the `TARDI-LED` Wi-Fi AP/captive portal while powered.
-
-```text
-SSID:     TARDI-LED
-Password: tardigrade
-Address:  http://192.168.4.1
-```
-
-The web page controls LED look/feel settings only. It does not include FIRE, relay, or hardware test controls.
-
-Settings include brightness, colour intensity/saturation, speed, palette, behaviour, ambient/animation target selection, zone selection, per-zone values, and animation duration. Live changes apply in RAM; `SAVE` persists them.
+The `TARDI-LED` AP and captive portal are available while powered at
+`http://192.168.4.1`. The page controls LEDs only and cannot activate FIRE
+outputs. It is served as one static gzip asset and loads live values through
+`/api/status`.

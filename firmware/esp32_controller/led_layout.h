@@ -11,8 +11,7 @@ enum LedZoneIndex {
   LED_ZONE_Z4_REAR = 3,
   LED_ZONE_Z5_FRONT_LEGS = 4,
   LED_ZONE_Z6_BACK_LEGS = 5,
-  LED_ZONE_Z7_DIGESTIVE = 6,
-  LED_ZONE_Z8_STATIONS = 7
+  LED_ZONE_Z7_DIGESTIVE = 6
 };
 
 const uint16_t LED_ZONE_START[LED_LOGICAL_ZONE_COUNT] = {
@@ -22,8 +21,7 @@ const uint16_t LED_ZONE_START[LED_LOGICAL_ZONE_COUNT] = {
   933,  // Z4 rear body
   1233, // Z5 front legs
   1533, // Z6 back legs
-  1833, // Z7 digestive tract
-  1908  // Z8 button-station strings
+  1833  // Z7 digestive tract
 };
 
 const uint16_t LED_ZONE_PIXEL_COUNT[LED_LOGICAL_ZONE_COUNT] = {
@@ -33,8 +31,7 @@ const uint16_t LED_ZONE_PIXEL_COUNT[LED_LOGICAL_ZONE_COUNT] = {
   300, // Z4 rear body: 933-1232
   300, // Z5 front legs: 1233-1532
   300, // Z6 back legs: 1533-1832
-  75,  // Z7 digestive tract: 1833-1907
-  100  // Z8 button-station strings: 1908-2007
+  75   // Z7 digestive tract: 1833-1907
 };
 
 const uint16_t LED_ZONE_END[LED_LOGICAL_ZONE_COUNT] = {
@@ -44,8 +41,7 @@ const uint16_t LED_ZONE_END[LED_LOGICAL_ZONE_COUNT] = {
   1232,
   1532,
   1832,
-  1907,
-  2007
+  1907
 };
 
 inline bool ledLayoutZoneForPixel(uint16_t logicalPixelIndex, uint8_t &zoneIndex) {
@@ -61,20 +57,6 @@ inline bool ledLayoutZoneForPixel(uint16_t logicalPixelIndex, uint8_t &zoneIndex
 
   return false;
 }
-
-const uint8_t LED_OUTPUT_EXPANDER_CHANNEL_COUNT = 8;
-
-// Physical Output Expander order differs from PixelBlaze logical render order.
-const uint8_t LED_OUTPUT_EXPANDER_ZONE[LED_OUTPUT_EXPANDER_CHANNEL_COUNT] = {
-  LED_ZONE_Z8_STATIONS,   // Ch0
-  LED_ZONE_Z1_MOUTH,      // Ch1
-  LED_ZONE_Z2_SHOULDER,   // Ch2
-  LED_ZONE_Z3_MIDBODY,    // Ch3
-  LED_ZONE_Z4_REAR,       // Ch4
-  LED_ZONE_Z5_FRONT_LEGS, // Ch5
-  LED_ZONE_Z6_BACK_LEGS,  // Ch6
-  LED_ZONE_Z7_DIGESTIVE   // Ch7
-};
 
 const uint8_t LED_Z1_STRIP_COUNT = 4;
 const uint16_t LED_Z1_STRIP_LENGTHS[LED_Z1_STRIP_COUNT] = {
@@ -108,9 +90,5 @@ const uint8_t LED_LEGS_PER_OUTPUT = 4;
 const uint16_t LED_Z7_PIXEL_COUNT = 75;
 const uint8_t LED_Z7_PARALLEL_STRAND_COUNT = 7;
 const bool LED_Z7_USES_REVERSED_VISUAL_INDEX = true;
-
-const uint8_t LED_Z8_STATION_STRING_COUNT = 7;
-const uint16_t LED_Z8_PIXELS_PER_STATION_STRING = 14;
-const uint16_t LED_Z8_SPARE_PIXEL_COUNT = 2;
 
 #endif

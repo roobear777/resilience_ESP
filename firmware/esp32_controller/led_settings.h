@@ -60,6 +60,7 @@ uint8_t ledSettingsZoneBrightness(uint8_t zoneIndex);
 uint32_t ledSettingsAnimationDurationMs();
 uint16_t ledSettingsVersion();
 bool ledSettingsLoadedFromSaved();
+bool ledSettingsAmbientIsCompletelyDark();
 const LedLookSettings& ledSettingsGlobalLook(LedLookKind lookKind);
 LedLookSettings& ledSettingsMutableGlobalLook(LedLookKind lookKind);
 const LedLookSettings& ledSettingsZoneLook(LedLookKind lookKind, uint8_t zoneIndex);

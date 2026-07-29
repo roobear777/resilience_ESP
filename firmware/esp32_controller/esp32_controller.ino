@@ -5,11 +5,15 @@
 #endif
 
 #include "led_engine.h"
-#include "led_expander_output.h"
+#include "led_direct_output.h"
 #include "led_layout.h"
 #include "led_settings.h"
 #include "led_state.h"
 #include "web_setup.h"
+
+#if !ARDUINO_USB_CDC_ON_BOOT
+#error "Enable Tools > USB CDC On Boot so Serial uses native USB GPIO19/GPIO20; UART0 conflicts with the Z7 LED lane on GPIO43."
+#endif
 
 // ==================================================
 // Tardi Controller
@@ -24,37 +28,9 @@
 // - FIRE1-FIRE8 normal one-shot fire outputs
 // - FIRE9 / Head Poof active only while Button 1 + Button 8 are held
 // - Serial diagnostics
-// - OLED diagnostics
 //
 // Full baseline details live in docs/current_baseline.md.
 // Pin mapping rules live in docs/pin_mapping.md.
-
-// ==================================================
-// OLED HARDWARE SWITCH
-// ==================================================
-//
-// 0 = OLED code is compiled out.
-//     Use this before the OLED display and libraries are installed.
-//
-// 1 = OLED code is compiled in.
-//     Requires these Arduino libraries:
-//     - Adafruit SSD1306
-//     - Adafruit GFX Library
-//
-// The expected OLED is:
-// - 0.96 inch
-// - 128x64
-// - SSD1306 driver
-// - I2C / IIC
-// - likely address 0x3C
-
-#define ENABLE_OLED_HARDWARE 1
-
-#if ENABLE_OLED_HARDWARE
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#endif
 
 // ==================================================
 // CONFIG
@@ -80,20 +56,10 @@ const unsigned long OUTPUT_CUTOFF_MS = 10000;
 // Prevents Serial flooding while keeping the loop non-blocking.
 const unsigned long SERIAL_DEBUG_INTERVAL_MS = 100;
 
-// OLED refresh should be slower than the main loop.
-// This keeps display updates lightweight.
-const unsigned long OLED_UPDATE_INTERVAL_MS = 250;
-const unsigned long OLED_SETUP_PAGE_INTERVAL_MS = 4000;
-
-// Software Output Expander simulator diagnostics over USB Serial.
-// Keep disabled for the live build; helpers remain available for manual checks.
-const bool ENABLE_EXPANDER_SIM_SERIAL_DIAGNOSTICS = false;
-const unsigned long EXPANDER_SIM_SERIAL_DIAGNOSTIC_INTERVAL_MS = 5000;
-
 const uint8_t RGB_TEST_GPIO38_PIN = 38;
 const uint8_t RGB_TEST_GPIO48_PIN = 48;
 
-// false = keep FIRE GPIOs idle HIGH; Serial/OLED still show requested state.
+// false = keep FIRE GPIOs idle HIGH; Serial still shows requested state.
 // true  = allow FIRE GPIOs to drive the live active-LOW FIRE outputs.
 const bool FIRE_OUTPUTS_ENABLED = true;
 
@@ -112,37 +78,6 @@ const bool FIRE_OUTPUTS_ENABLED = true;
 // ESP32 3.3V -> button panel -> button return wire -> ESP32 GPIO input
 const bool USE_INTERNAL_PULLDOWNS = false;
 
-// GPIO40 was reserved for setup-mode experiments.
-// The Tardi web controller now starts automatically while powered.
-const int WEB_SETUP_BUTTON_PIN = 40;
-
-// ==================================================
-// OLED CONFIG
-// ==================================================
-//
-// Current expected module:
-// - SSD1306
-// - 128x64
-// - I2C
-// - 4 pins: GND, VCC, SCL, SDA
-// - likely address 0x3C
-//
-// OLED I2C pins are assigned from the current bench-tested map.
-// OLED SDA = GPIO1
-// OLED SCL = GPIO2
-
-const int OLED_WIDTH = 128;
-const int OLED_HEIGHT = 64;
-const int OLED_RESET_PIN = -1;
-const int OLED_I2C_ADDRESS = 0x3C;
-
-const int OLED_SDA_PIN = 1;
-const int OLED_SCL_PIN = 2;
-
-#if ENABLE_OLED_HARDWARE
-Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
-#endif
-
 // ==================================================
 // PIN CONFIG
 // ==================================================
@@ -154,17 +89,15 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
 //
 // Keep all raw GPIO numbers in this section.
 //
-// Avoid/reserve for now:
-// - GPIO0: boot/download-mode related; read HIGH during bench input test
+// Reserved / internally owned:
+// - GPIO0: FastLED LCD_CLOCKLESS dummy/padding signal; leave unwired
+// - GPIO19/GPIO20: native USB D-/D+
 // - GPIO48: likely onboard RGB/status LED related
-// - TX/RX: serial/programming related
-// - GPIO1/GPIO2: OLED SDA/SCL
 //
-
-// OLED is assigned to GPIO1/GPIO2.
-// LED Output Expander UART TX is GPIO39.
-// Real Output Expander output is enabled for the live build, and normal
-// animation mode starts automatically after boot.
+// Direct FastLED data lanes are GPIO1, GPIO2, GPIO39, GPIO40, GPIO41,
+// GPIO42, and GPIO43 for Z1 through Z7. OLED support and Pixelblaze Output
+// Expander output have been removed. Direct ambient animation output starts
+// automatically after setup completes.
 
 const int BUTTON_PINS[NUM_BUTTONS] = {
   4,  // Button 1
@@ -217,10 +150,7 @@ bool allButtonsPulseActive = false;
 bool allButtonsPulseArmed = true;
 
 unsigned long lastSerialDebugMs = 0;
-unsigned long lastOledUpdateMs = 0;
-unsigned long lastExpanderSimDiagnosticMs = 0;
 
-bool oledReady = false;
 String serialLedCommandBuffer = "";
 
 void startRgbTestDiagnostic();
@@ -251,15 +181,12 @@ void setup() {
   Serial.print("Input pulldown mode: ");
   Serial.println(USE_INTERNAL_PULLDOWNS ? "INTERNAL / BENCH" : "EXTERNAL / FINAL");
 
-  Serial.print("OLED hardware compiled: ");
-  Serial.println(ENABLE_OLED_HARDWARE ? "YES" : "NO");
-
   ledStateBegin();
   ledSettingsBegin();
   ledEngineBegin();
-  ledExpanderOutputBegin();
+  ledDirectOutputBegin();
+  ledDirectOutputRunStartupHardwareTest(Serial);
   webSetupBegin(true, Serial);
-  setupOled();
 }
 
 // ==================================================
@@ -276,7 +203,6 @@ void loop() {
   updateLedOutputs();
   updateFireOutputs();
   printSerialDebugIfDue();
-  updateOled();
   webSetupLoop();
 
   // No blocking delay here.
@@ -287,8 +213,6 @@ void loop() {
 // ==================================================
 
 void setupPins() {
-  pinMode(WEB_SETUP_BUTTON_PIN, INPUT_PULLUP);
-
   for (int i = 0; i < NUM_BUTTONS; i++) {
     if (USE_INTERNAL_PULLDOWNS) {
       pinMode(BUTTON_PINS[i], INPUT_PULLDOWN);
@@ -302,10 +226,6 @@ void setupPins() {
     pinMode(FIRE_PINS[i], OUTPUT);
     digitalWrite(FIRE_PINS[i], FIRE_IDLE_LEVEL);
   }
-}
-
-bool isWebSetupButtonHeld() {
-  return digitalRead(WEB_SETUP_BUTTON_PIN) == LOW;
 }
 
 // ==================================================
@@ -596,18 +516,7 @@ void updateLedTriggers(bool bigPoofStartedThisLoop) {
 void updateLedOutputs() {
   unsigned long now = millis();
   ledEngineUpdate(now);
-  ledExpanderOutputUpdate(now);
-
-  if (
-    ENABLE_EXPANDER_SIM_SERIAL_DIAGNOSTICS
-    && (now - lastExpanderSimDiagnosticMs) >= EXPANDER_SIM_SERIAL_DIAGNOSTIC_INTERVAL_MS
-  ) {
-    lastExpanderSimDiagnosticMs = now;
-    ledExpanderOutputPrintSimFrameStats(now, Serial);
-  }
-
-  // Future direct LED output hook.
-  // Direct ESP32 LED control is not part of the current fire-control scaffold.
+  ledDirectOutputUpdate(now);
 }
 
 // ==================================================
@@ -670,7 +579,7 @@ void handleSerialLedCommand(String command) {
   }
 
   if (command == "led status") {
-    ledExpanderOutputPrintRuntimeStatus(Serial);
+    ledDirectOutputPrintRuntimeStatus(Serial);
     ledSettingsPrint(Serial);
     return;
   }
@@ -709,41 +618,41 @@ void handleSerialLedCommand(String command) {
   }
 
   if (command == "led off") {
-    ledExpanderOutputSetMode(LED_OUTPUT_OFF, Serial);
+    ledDirectOutputSetMode(LED_OUTPUT_OFF, Serial);
     return;
   }
 
   if (command == "led solid") {
-    ledExpanderOutputSetMode(LED_OUTPUT_VALIDATE_SOLID, Serial);
+    ledDirectOutputSetMode(LED_OUTPUT_VALIDATE_SOLID, Serial);
     return;
   }
 
   if (command == "led red") {
-    ledExpanderOutputSetColorValidationMode(LED_VALIDATION_COLOR_RED, Serial);
+    ledDirectOutputSetColorValidationMode(LED_VALIDATION_COLOR_RED, Serial);
     return;
   }
 
   if (command == "led green") {
-    ledExpanderOutputSetColorValidationMode(LED_VALIDATION_COLOR_GREEN, Serial);
+    ledDirectOutputSetColorValidationMode(LED_VALIDATION_COLOR_GREEN, Serial);
     return;
   }
 
   if (command == "led blue") {
-    ledExpanderOutputSetColorValidationMode(LED_VALIDATION_COLOR_BLUE, Serial);
+    ledDirectOutputSetColorValidationMode(LED_VALIDATION_COLOR_BLUE, Serial);
     return;
   }
 
   if (command == "led animation") {
-    ledExpanderOutputSetMode(LED_OUTPUT_ANIMATION, Serial);
+    ledDirectOutputSetMode(LED_OUTPUT_ANIMATION, Serial);
     return;
   }
 
   if (command.startsWith("led ch ")) {
     uint8_t channelId = 0;
     if (parseLedChannelCommand(command, channelId)) {
-      ledExpanderOutputSetChannelValidationMode(channelId, Serial);
+      ledDirectOutputSetLaneValidationMode(channelId, Serial);
     } else {
-      Serial.println("Use: led ch 0..7");
+      Serial.println("Use: led ch 1..7");
     }
     return;
   }
@@ -762,7 +671,7 @@ bool parseLedChannelCommand(const String &command, uint8_t &channelId) {
   String value = command.substring(7);
   value.trim();
 
-  if (value.length() != 1 || value[0] < '0' || value[0] > '7') {
+  if (value.length() != 1 || value[0] < '1' || value[0] > '7') {
     return false;
   }
 
@@ -813,7 +722,11 @@ bool parseLedSettingsZoneCommand(
   zoneText.trim();
   valueText.trim();
 
-  if (zoneText.length() != 1 || zoneText[0] < '0' || zoneText[0] > '7') {
+  if (
+    zoneText.length() != 1
+    || zoneText[0] < '0'
+    || zoneText[0] >= static_cast<char>('0' + LED_LOGICAL_ZONE_COUNT)
+  ) {
     return false;
   }
 
@@ -881,7 +794,7 @@ void handleLedSettingsSetCommand(const String &command) {
     uint8_t zoneIndex = 0;
 
     if (!parseLedSettingsZoneCommand(command, zoneIndex, value)) {
-      Serial.println("Use: led set zone 0..7 0..255");
+      Serial.println("Use: led set zone 0..6 0..255");
       return;
     }
 
@@ -891,7 +804,7 @@ void handleLedSettingsSetCommand(const String &command) {
     return;
   }
 
-  Serial.println("Use: led set brightness|saturation|ambient|active 0..255, or led set zone 0..7 0..255");
+  Serial.println("Use: led set brightness|saturation|ambient|active 0..255, or led set zone 0..6 0..255");
 }
 
 void printLedCommandHelp() {
@@ -908,13 +821,13 @@ void printLedCommandHelp() {
   Serial.println("  led set saturation 0..255");
   Serial.println("  led set ambient 0..255");
   Serial.println("  led set active 0..255");
-  Serial.println("  led set zone 0..7 0..255");
+  Serial.println("  led set zone 0..6 0..255");
   Serial.println("  led off");
   Serial.println("  led solid");
   Serial.println("  led red");
   Serial.println("  led green");
   Serial.println("  led blue");
-  Serial.println("  led ch 0..7");
+  Serial.println("  led ch 1..7");
   Serial.println("  led animation");
   Serial.println("  led help");
 }
@@ -968,10 +881,7 @@ void printSerialDebug() {
   Serial.print(FIRE_OUTPUTS_ENABLED ? "ON" : "OFF");
 
   Serial.print(" | PullDown=");
-  Serial.print(USE_INTERNAL_PULLDOWNS ? "INTERNAL" : "EXTERNAL");
-
-  Serial.print(" | OLED=");
-  Serial.println(ENABLE_OLED_HARDWARE ? (oledReady ? "READY" : "ERROR") : "OFF");
+  Serial.println(USE_INTERNAL_PULLDOWNS ? "INTERNAL" : "EXTERNAL");
 }
 
 // ==================================================
@@ -1073,437 +983,3 @@ void rgbDiagnosticDelayNops(uint16_t count) {
     asm volatile("nop");
   }
 }
-
-// ==================================================
-// OLED DISPLAY
-// ==================================================
-//
-// Preserved older OLED arrangement notes:
-//
-// Earlier planning used a simulator/live-mode page shape with a top mode line,
-// a controller status line, Input, Output, LED, and a final live-output line.
-// Keep these notes here so the old arrangement is not lost while the current
-// setup page work evolves.
-//
-// Older idle simulator page:
-//   SIMULATOR MODE
-//   READY
-//   Input: -
-//   Output: OFF
-//   LED: -
-//   No live output
-//
-// Older firing page example:
-//   SIMULATOR MODE
-//   FIRING
-//   Input: 4
-//   Output: 4
-//   LED: 4
-//   No live output
-//
-// Older pulse-complete page example:
-//   SIMULATOR MODE
-//   PULSE COMPLETE
-//   Input: 4
-//   Output: OFF
-//   LED: 4
-//   No live output
-//
-// Older Head Poof page example:
-//   SIMULATOR MODE
-//   HEAD POOF
-//   Input: 1+8
-//   Output: 1 8 9
-//   LED: FULL BODY
-//   No live output
-//
-// Older live-output wording:
-//   LIVE MODE
-//   FIRING
-//   Input: 4
-//   Output: 4
-//   LED: 4
-//   Live output: ON
-//
-// Current OLED behavior below keeps FIRE/button diagnostics as the priority
-// page, and rotates in the LED Output Expander setup page only while idle.
-
-void setupOled() {
-#if ENABLE_OLED_HARDWARE
-  if (OLED_SDA_PIN >= 0 && OLED_SCL_PIN >= 0) {
-    Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
-  } else {
-    Wire.begin();
-  }
-
-  oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS);
-
-  if (!oledReady) {
-    Serial.println("OLED setup failed.");
-    return;
-  }
-
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println(isOledLiveMode() ? "LIVE" : "SIMULATED");
-  display.println();
-  display.println("OLED READY");
-  display.display();
-
-  Serial.println("OLED setup complete.");
-#else
-  oledReady = false;
-  Serial.println("OLED disabled at compile time.");
-#endif
-}
-
-void updateOled() {
-#if ENABLE_OLED_HARDWARE
-  if (!oledReady) {
-    return;
-  }
-
-  unsigned long now = millis();
-
-  if ((now - lastOledUpdateMs) < OLED_UPDATE_INTERVAL_MS) {
-    return;
-  }
-
-  lastOledUpdateMs = now;
-
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-
-  if (
-    !hasAnyActiveInput()
-    && !hasAnyActiveFireOutput()
-    && shouldAllowOledSetupPage()
-    && shouldShowOledSetupPage(now)
-  ) {
-    drawOledSetupPage();
-    display.display();
-    return;
-  }
-
-  drawOledControllerPage();
-  display.display();
-#endif
-}
-
-#if ENABLE_OLED_HARDWARE
-bool isOledLiveMode() {
-  return ledExpanderOutputRealOutputStarted()
-    && ledExpanderOutputMode() != LED_OUTPUT_OFF;
-}
-
-void drawOledControllerModeLine() {
-  if (!isOledLiveMode()) {
-    drawOledLine(0, "SIMULATED");
-    return;
-  }
-
-  const bool invertLive =
-      ((millis() / (OLED_UPDATE_INTERVAL_MS * 4)) % 2) == 1;
-
-  if (invertLive) {
-    const int lineHeight = 10;
-    display.fillRect(0, 0, OLED_WIDTH, lineHeight, SSD1306_WHITE);
-    display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("LIVE");
-    display.setTextColor(SSD1306_WHITE);
-    return;
-  }
-
-  drawOledLine(0, "LIVE");
-}
-
-void drawOledControllerPage() {
-  drawOledControllerModeLine();
-  drawOledLine(1, getOledStatusLabel());
-
-  if (hasAnyActiveInput()) {
-    drawOledLineWithValue(2, "Input:", getInputDisplayLabel());
-  } else {
-    drawOledLine(2, "Input: -");
-  }
-
-  if (hasAnyActiveFireOutput()) {
-    drawOledLineWithValue(3, "FIRE:", getOutputDisplayLabel());
-  } else {
-    drawOledLine(3, "FIRE: OFF");
-  }
-
-  drawOledLineWithValue(4, "LED:", getLedDisplayLabel());
-}
-
-void drawOledSetupPage() {
-  if (webSetupIsActive()) {
-    drawOledLine(0, "WIFI SETUP");
-    drawOledLine(1, webSetupSsid());
-    drawOledLine(2, webSetupIpAddress());
-    return;
-  }
-
-  drawOledLine(0, "SETUP");
-  drawOledLine(1, getLedUartDisplayLabel());
-  drawOledLine(2, getLedUartTxDisplayLabel());
-  drawOledLine(3, getRealLedDisplayLabel());
-}
-
-void drawOledLine(int lineNumber, const String &text) {
-  const int lineHeight = 10;
-  display.setCursor(0, lineNumber * lineHeight);
-  display.println(text);
-}
-
-void drawOledLineWithValue(int lineNumber, const String &label, const String &value) {
-  const int lineHeight = 10;
-  display.setCursor(0, lineNumber * lineHeight);
-  display.print(label);
-  display.print(" ");
-  display.println(value);
-}
-
-String getOledStatusLabel() {
-  if (isBigPoofDisplayActive()) {
-    return "HEAD POOF";
-  }
-
-  if (hasAnyActiveFireOutput()) {
-    return "FIRING";
-  }
-
-  if (hasAnyActiveInput()) {
-    return "PULSE COMPLETE";
-  }
-
-  return "READY";
-}
-
-bool shouldShowOledSetupPage(unsigned long now) {
-  return ((now / OLED_SETUP_PAGE_INTERVAL_MS) % 2) == 1;
-}
-
-bool shouldAllowOledSetupPage() {
-  LedOutputMode mode = ledExpanderOutputMode();
-
-  if (
-    mode == LED_OUTPUT_VALIDATE_SOLID
-    || mode == LED_OUTPUT_VALIDATE_CHANNEL
-    || mode == LED_OUTPUT_VALIDATE_COLOR
-  ) {
-    return true;
-  }
-
-  if (
-    mode == LED_OUTPUT_ANIMATION
-    && ledExpanderOutputRealOutputAllowed()
-    && ledExpanderOutputRealOutputStarted()
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-String getLedUartDisplayLabel() {
-  LedOutputMode mode = ledExpanderOutputMode();
-
-  if (mode == LED_OUTPUT_VALIDATE_SOLID) {
-    return "LED TEST SOLID";
-  }
-
-  if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
-    String label = "LED TEST CH";
-    label += String(ledExpanderOutputValidationChannel());
-    return label;
-  }
-
-  if (mode == LED_OUTPUT_VALIDATE_COLOR) {
-    String label = "LED TEST ";
-    label += String(ledExpanderOutputValidationColorName());
-    label.toUpperCase();
-    return label;
-  }
-
-  if (mode == LED_OUTPUT_ANIMATION) {
-    return "LED ANIMATION";
-  }
-
-  if (!ledExpanderOutputRealOutputAllowed()) {
-    return "LED UART OFF";
-  }
-
-  if (ledExpanderOutputRealOutputStarted()) {
-    return "LED UART ON";
-  }
-
-  return "LED UART WAIT";
-}
-
-String getLedUartTxDisplayLabel() {
-  String label = "TX GPIO";
-  label += String(ledExpanderOutputPlannedTxPin());
-  label += " ";
-  label += String(ledExpanderOutputPlannedBaudRate() / 1000000);
-  label += "M";
-  return label;
-}
-
-String getRealLedDisplayLabel() {
-  if (
-    ledExpanderOutputMode() != LED_OUTPUT_OFF
-    && ledExpanderOutputRealOutputAllowed()
-    && ledExpanderOutputRealOutputStarted()
-  ) {
-    if (ledExpanderOutputMode() == LED_OUTPUT_VALIDATE_COLOR) {
-      String label = "CHECK LEDS ";
-      label += String(ledExpanderOutputValidationColorName());
-      label.toUpperCase();
-      return label;
-    }
-
-    return "CHECK LEDS";
-  }
-
-  return "Real LEDs OFF";
-}
-
-String getInputDisplayLabel() {
-  if (!hasAnyActiveInput()) {
-    return "-";
-  }
-
-  if (debouncedButtonState[0] && debouncedButtonState[7]) {
-    return "1+8";
-  }
-
-  String label = "";
-
-  for (int i = 0; i < NUM_BUTTONS; i++) {
-    if (debouncedButtonState[i]) {
-      if (label.length() > 0) {
-        label += "+";
-      }
-
-      label += String(i + 1);
-    }
-  }
-
-  return label;
-}
-
-String getOutputDisplayLabel() {
-  if (!hasAnyActiveFireOutput()) {
-    return "OFF";
-  }
-
-  String label = "";
-
-  for (int i = 0; i < NUM_FIRE_OUTPUTS; i++) {
-    if (fireState[i]) {
-      if (label.length() > 0) {
-        label += " ";
-      }
-
-      label += String(i + 1);
-    }
-  }
-
-  return label;
-}
-
-String getLedDisplayLabel() {
-  if (isBigPoofRequested() || fireState[FIRE9_INDEX]) {
-    return "FULL BODY";
-  }
-
-  LedOutputMode mode = ledExpanderOutputMode();
-
-  if (mode == LED_OUTPUT_VALIDATE_SOLID) {
-    return "TEST ALL";
-  }
-
-  if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
-    String label = "TEST CH";
-    label += String(ledExpanderOutputValidationChannel());
-    return label;
-  }
-
-  if (mode == LED_OUTPUT_VALIDATE_COLOR) {
-    String label = "TEST ";
-    label += String(ledExpanderOutputValidationColorName());
-    label.toUpperCase();
-    return label;
-  }
-
-  String label = "";
-  unsigned long now = millis();
-
-  for (int i = 0; i < 7; i++) {
-    if (ledIsZoneActive(i, now)) {
-      if (label.length() > 0) {
-        label += "+";
-      }
-
-      label += String(i + 1);
-
-      if (label.length() > 9) {
-        return "MULTI ANIMATION";
-      }
-    }
-  }
-
-  if (label.length() > 0) {
-    if (label.indexOf('+') < 0) {
-      return String("ZONE ") + label + " ANIMATION";
-    }
-
-    label = String("ZONES ") + label + " ANIM";
-
-    if (label.length() > 16) {
-      return "MULTI ANIMATION";
-    }
-
-    return label;
-  }
-
-  if (mode == LED_OUTPUT_ANIMATION) {
-    if (ledExpanderOutputRealOutputAllowed() && !ledExpanderOutputRealOutputStarted()) {
-      return "WAIT";
-    }
-
-    return "AMBIENT";
-  }
-
-  return "OFF";
-}
-
-bool hasAnyActiveInput() {
-  for (int i = 0; i < NUM_BUTTONS; i++) {
-    if (debouncedButtonState[i]) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool hasAnyActiveFireOutput() {
-  for (int i = 0; i < NUM_FIRE_OUTPUTS; i++) {
-    if (fireState[i]) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool isBigPoofDisplayActive() {
-  return isBigPoofRequested() || fireState[FIRE9_INDEX];
-}
-#endif

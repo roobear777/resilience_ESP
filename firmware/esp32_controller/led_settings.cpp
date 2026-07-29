@@ -282,6 +282,27 @@ bool ledSettingsLoadedFromSaved() {
   return ledSettingsLoadedSaved;
 }
 
+bool ledSettingsAmbientIsCompletelyDark() {
+  if (
+    ledSettings.masterBrightness == 0
+    || ledSettings.ambientLevel == 0
+    || ledSettings.globalLook[LED_LOOK_AMBIENT].brightness == 0
+  ) {
+    return true;
+  }
+
+  for (uint8_t zone = 0; zone < LED_LOGICAL_ZONE_COUNT; zone++) {
+    if (
+      ledSettings.zoneBrightness[zone] > 0
+      && ledSettings.zoneLook[LED_LOOK_AMBIENT][zone].brightness > 0
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 const LedLookSettings& ledSettingsGlobalLook(LedLookKind lookKind) {
   if (lookKind >= LED_LOOK_COUNT) {
     return ledSettings.globalLook[LED_LOOK_AMBIENT];

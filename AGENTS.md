@@ -1,18 +1,32 @@
 # Tardi Controller Working Rules
 
-## Critical Safety Rules
+## Current Hardware Build
 
-Do not change casually:
+The live firmware uses seven direct FastLED `LCD_CLOCKLESS` lanes. The
+Pixelblaze Output Expander, OLED, Z8/button-station LEDs, and GPIO40 setup
+button are not active hardware.
 
-- FIRE GPIO pins
-- FIRE active-LOW polarity
-- button pins
-- OLED pins
-- Head Poof cutoff behaviour
-- LED Output Expander channel mapping
-- Output Expander UART TX pin / baud
+```text
+GPIO1   -> Z1 Mouth, 208 pixels
+GPIO2   -> Z2 Shoulder, 325 pixels
+GPIO39  -> Z3 Midbody, 400 pixels
+GPIO40  -> Z4 Rear, 300 pixels
+GPIO41  -> Z5 Front legs, 300 pixels
+GPIO42  -> Z6 Back legs, 300 pixels
+GPIO43  -> Z7 Digestive, 75 pixels
+GPIO0   -> LCD_CLOCKLESS internal dummy/padding, unwired
+```
 
-FIRE outputs are active-LOW:
+Total logical and physical pixels: 1,908. Wire order is GRB. Z3 must remain a
+full 400-pixel animation lane so the pinned FastLED multi-chunk implementation
+can be validated on hardware.
+
+Do not restore OLED, Output Expander output, Z8, or GPIO40 setup-button
+ownership unless explicitly requested.
+
+## Critical FIRE Rules
+
+Do not change FIRE GPIOs, active-LOW polarity, or cutoff behavior casually.
 
 ```text
 idle      = HIGH
@@ -20,76 +34,82 @@ triggered = LOW
 return    = HIGH
 ```
 
-Normal FIRE1-FIRE8 pulse duration is 500 ms.
+Current accepted proof-of-concept behavior:
 
-Head Poof / FIRE9 is Button 1 + Button 8 and retains the 10-second FIRE cutoff.
+- FIRE1–FIRE8: immediate 100 ms pulse on press;
+- held button: another 100 ms pulse every 1,000 ms;
+- all eight buttons: FIRE1–FIRE9 together for 500 ms once, release to re-arm;
+- Button 1 + Button 8: FIRE9/Head Poof while held, maximum 10 seconds;
+- all-buttons behavior has priority over normal repeats and Head Poof.
 
-## Current Live Build State
-
-The checked firmware is currently a live hardware build.
-
-Expected live settings:
-
-```cpp
-ENABLE_REAL_PB_EXPANDER_OUTPUT = true
-FIRE_OUTPUTS_ENABLED = true
-USE_INTERNAL_PULLDOWNS = false
-```
-
-Ambient LED animation starts automatically after boot through the Output Expander path.
-
-The web controller AP is available while powered.
-
-Do not switch between live hardware and simulator/development behavior unless the task explicitly asks for it.
-
-## Pin / Hardware Rules
-
-Button inputs are active-HIGH:
+FIRE pins:
 
 ```text
+GPIO8, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, GPIO14, GPIO21, GPIO47
+```
+
+## Buttons and USB
+
+Buttons are active-HIGH with external 10k pull-downs:
+
+```text
+GPIO4, GPIO5, GPIO6, GPIO7, GPIO15, GPIO16, GPIO17, GPIO18
 released = LOW
 pressed  = HIGH / 3.3V
 ```
 
-Live wiring uses external 10k pulldowns.
+GPIO19/GPIO20 are native USB D-/D+. USB CDC On Boot is mandatory because
+UART0 conflicts with GPIO43/Z7. Do not move Serial back to UART0.
 
-Output Expander UART:
+## Live Build Settings
 
-```text
-TX pin = GPIO39
-baud   = 2000000
+```cpp
+ENABLE_REAL_FASTLED_OUTPUT = true
+FIRE_OUTPUTS_ENABLED = true
+USE_INTERNAL_PULLDOWNS = false
 ```
 
-Do not use board-labelled TX/RX / UART0 for the Output Expander.
-Do not use GPIO16 for Output Expander TX; it is Button 6.
-Do not use PBDriverAdapter's old default ESP32 TX GPIO23 for Tardi real output.
+OLED code and libraries are removed, not merely compiled out.
 
-## PixelBlaze Reference Rules
+The boot mode is automatic LED animation. After Serial and LED initialization,
+a blocking five-second moving hardware check runs before Wi-Fi. It uses
+temporary visible brightness and fixed nonzero speed without modifying saved
+settings, then immediately resumes normal saved rendering. Do not reintroduce
+the old update-loop warm-up or fade. No command or setup button is required for
+normal operation.
 
-`reference_only/` is read-only.
+## FastLED Rules
 
-Do not modify anything inside `reference_only/`.
+Required revision:
 
-Do not copy PixelBlaze GPIO numbers, FIRE logic, FIRE polarity, generated `dist/` code, or archived old pattern files into ESP32 firmware.
+```text
+fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
+```
 
-Use PixelBlaze source only for LED layout, animation structure, and per-zone behavior.
+Use the explicit FastLED channel API with `Bus::LCD_CLOCKLESS`. Do not replace
+it with default `addLeds` routing, FastLED RMT, NeoPixelBus, or Adafruit
+NeoPixel without an explicit backend task.
 
-## LED Architecture Rules
+GPIO0 is used internally by the ESP32-S3 LCD/I80 peripheral and must remain
+unwired. Register exactly seven real lanes; do not add a dummy LED controller.
 
-Keep `firmware/esp32_controller/esp32_controller.ino` as the controller coordinator.
+The LED frame starts black, but normal animation transmits automatically.
+First-show diagnostics confirm routing and heap state; they do not prove
+physical light output.
 
-The LED engine must not read physical buttons directly.
-The LED engine must not touch FIRE pins.
+FastLED ESP32 logging and full error handling are enabled during hardware
+validation. Keep `firstShowAttempted` distinct from success, and do not add a
+`transmissionSuccessful` status without a genuine driver result. Verbose
+logging may be disabled only after physical validation or behind an explicit
+diagnostic build flag.
 
-Controller logic owns:
+## LED Architecture
 
-- button debounce
-- accepted button/FIRE triggers
-- FIRE outputs
-- Head Poof logic
-- safety cutoffs
-- OLED diagnostics
-- Serial logging
+Keep `firmware/esp32_controller/esp32_controller.ino` as coordinator.
+
+The LED engine must not read physical buttons or touch FIRE pins. Controller
+logic owns debounce, accepted triggers, FIRE state, Head Poof, safety cutoffs,
+Serial, and web integration.
 
 LED active state uses accepted trigger windows:
 
@@ -97,47 +117,36 @@ LED active state uses accepted trigger windows:
 zoneActive = now < ledActiveUntil[zone]
 ```
 
-Do not revert to PixelBlaze held-button active logic.
+Do not revert to held-button Pixelblaze LED state.
 
-## Output Expander Rules
+## Retired and Archival Code
 
-`PBDriverAdapter` is vendored under:
+`PBDriverAdapter` remains vendored as `PBDriverAdapter.cpp.reference` so the
+Arduino builder does not compile it. It is not in the active output path. Do
+not restore its `.cpp` extension or re-enable it unless explicitly requested.
 
-```text
-firmware/esp32_controller/src/PBDriverAdapter/
-```
+The web UI source is `firmware/esp32_controller/web_setup_page.html`; firmware
+serves its deterministic gzip representation from `web_setup_page_gzip.h`.
+Keep them synchronized when changing the UI. Live values must continue to load
+through `/api/status`.
 
-Do not modify vendored PBDriverAdapter files unless explicitly requested.
-
-Tardi local patch:
-
-```cpp
-void PBDriverAdapter::begin(uint32_t uartFrequency, int8_t txPin);
-```
-
-The physical output path is:
+Archival Pixelblaze material currently lives under:
 
 ```text
-ESP32-S3 -> UART GPIO39 -> Pixelblaze Output Expander -> LED zones
+older files/reference_only/
 ```
 
-Current physical colour metadata is RGB:
-
-```text
-redi   = 0
-greeni = 1
-bluei  = 2
-```
+Treat it as read-only. Use it only for layout and animation reference. Never
+copy its GPIOs, FIRE logic/polarity, generated code, or old output settings
+into live firmware.
 
 ## Editing Rules
 
-Do not modify `reference_only/`.
-
-Do not add FastLED, NeoPixelBus, or Adafruit NeoPixel.
-
-Do not change FIRE/button/OLED behavior while working on LED rendering or web UI unless explicitly requested.
-
-Prefer small targeted edits that preserve existing behavior.
+- Preserve FIRE/button behavior unless the task explicitly changes it.
+- Preserve native USB and direct LED pin ownership.
+- Prefer small targeted changes.
+- Keep current-facing docs aligned with firmware; archive obsolete hardware notes.
+- Do not claim software diagnostics prove physical LED wiring or power.
 
 ## vexp <!-- vexp v2.0.25 -->
 
