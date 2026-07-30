@@ -34,22 +34,26 @@ The two boards intentionally use different Arduino-ESP32 cores:
 | Target | Arduino-ESP32 | ESP-IDF family | FastLED |
 |---|---:|---:|---:|
 | Tardi | 3.3.10 | 5.x | not linked |
-| Eclair | 2.0.17 | 4.4.7 | pinned 3.10.4 commit below |
+| Eclair | 2.0.17 | 4.4.7 | 3.9.20 |
 
-FastLED must be revision `fa79f3f757ca2dadd5db7773b2bed5c13b26b33a`.
 PlatformIO `espressif32@6.10.0` resolves to Arduino-ESP32 2.0.17 / IDF 4.4.7
-and the local `platformio.ini` pins both that platform and the FastLED commit.
+and the local `platformio.ini` pins both that platform and FastLED 3.9.20.
 
 Why the older Eclair core is deliberate:
 
 - Seven outputs require FastLED's RMT4 worker pool on the ESP32-S3's four TX
   channels; Eclair's `build_opt.h` globally sets four channels and one RMT
   memory block per active channel.
-- With Arduino-ESP32 3.3.10, a sketch-local `FASTLED_RMT5=0` did not affect the
-  separately compiled FastLED library. Making it a global flag then exposed
-  compile failures in the pinned FastLED RMT4 implementation against IDF 5.x.
-- Arduino-ESP32 2.0.17 uses IDF 4.4.7, selects RMT4 normally, and compiles all
-  seven registered controllers. Do not add `FASTLED_RMT5=0` to this build.
+- Arduino-ESP32 3.3.10 with FastLED 3.10.4 cannot build the forced RMT4 path:
+  the sketch-local selection produces a missing RMT4 factory symbol, while a
+  global selection exposes IDF5 interface and `RMTMEM` errors inside FastLED.
+- Arduino-ESP32 2.0.17 uses IDF 4.4.7, selects FastLED 3.9.20 RMT4 normally,
+  and compiles all seven registered controllers. Do not add `FASTLED_RMT5=0`
+  to this build.
+
+The compiled Eclair ELF must contain `ESP32RMTController`, `startNext()` and
+`RMTMEM`, and must not contain `ClocklessBlockingGeneric`. This confirms the
+selected software driver, not physical light output.
 
 Arduino IDE/CLI settings for both targets are ESP32S3 Dev Module, 8 MB flash,
 OPI PSRAM, Hardware CDC, and USB CDC On Boot enabled. Tardi additionally uses
@@ -58,12 +62,15 @@ of an ESP32 core at a time, so either switch versions between builds or use a
 separate Arduino CLI data/config directory for Eclair's 2.0.17 installation.
 The old minimal Tardi `platformio.ini` is not its verified 3.3.10 build path.
 
-Last verified clean builds:
+Verified clean builds:
 
 ```text
-Tardi  3.3.10: 950,314 bytes flash; 47,168 bytes static RAM
-Eclair 2.0.17: 748,177 bytes flash; 32,500 bytes static RAM
+Tardi  3.3.10:                    950,314 bytes flash; 47,168 bytes static RAM
+Eclair 2.0.17 / FastLED 3.9.20:  335,385 bytes flash; 26,468 bytes static RAM
 ```
+
+Physical validation must still confirm all seven lanes and the complete
+400-pixel Z3 multi-chunk lane under real power and wiring.
 
 ## Shared-source synchronization
 

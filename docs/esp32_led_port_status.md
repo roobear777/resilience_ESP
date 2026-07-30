@@ -17,11 +17,13 @@
 ```text
 Tardi:  Arduino-ESP32 3.3.10, 950,314 / 3,342,336 bytes flash
         47,168 / 327,680 bytes static RAM
-Eclair: Arduino-ESP32 2.0.17, pinned FastLED 3.10.4,
-        748,177 / 1,310,720 bytes flash
-        32,500 / 327,680 bytes static RAM
+Eclair: Arduino-ESP32 2.0.17, FastLED 3.9.20 RMT4
+        335,385 / 3,342,336 bytes flash
+        26,468 / 327,680 bytes static RAM
 ```
 
 Both were compiled for ESP32-S3 Dev Module, 8 MB flash, OPI PSRAM, Hardware CDC,
-and USB CDC On Boot. Physical LED output and the direct 3.3 V-to-DIN electrical
-assumption still require validation on the finished wiring.
+and USB CDC On Boot. Eclair's ELF contains `ESP32RMTController`, `startNext()`
+and `RMTMEM`, with no `ClocklessBlockingGeneric` fallback. Physical LED output
+and the direct 3.3 V-to-DIN electrical assumption still require validation on
+the finished wiring.

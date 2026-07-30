@@ -81,15 +81,19 @@ command or setup button is required for normal operation.
 
 ## FastLED Rules
 
-Required revision:
+Required FastLED release:
 
 ```text
-fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
+3.9.20
 ```
 
-Eclair must use Arduino-ESP32 2.0.17 / IDF4 so the pinned FastLED RMT4 worker
+Eclair must use Arduino-ESP32 2.0.17 / IDF4 so the FastLED 3.9.20 RMT4 worker
 pool can schedule seven registered controllers over four ESP32-S3 TX channels.
 Tardi remains on Arduino-ESP32 3.3.10 and must not drive local LED lanes.
+
+Do not use FastLED 3.10.4 for Eclair7. Its forced RMT4 path does not build
+correctly against Arduino-ESP32 3.3.10/IDF5, and 3.9.20 is the verified IDF4
+seven-controller build.
 
 The Eclair LED frame starts black. A 500 ms link timeout forces it black until
 a valid state packet returns. Status and first-show diagnostics do not prove

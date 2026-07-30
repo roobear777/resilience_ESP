@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include <FastLED.h>
+#include <esp_arduino_version.h>
 #include <string.h>
 
 #include "src/shared/eclair_link_protocol.h"
@@ -12,6 +13,14 @@
 
 #if !ARDUINO_USB_CDC_ON_BOOT
 #error "Enable Tools > USB CDC On Boot. Eclair diagnostics must preserve native USB on GPIO19/GPIO20."
+#endif
+
+#if ESP_ARDUINO_VERSION != ESP_ARDUINO_VERSION_VAL(2, 0, 17)
+#error "Eclair7 requires Arduino-ESP32 2.0.17 / IDF4 for the seven-controller RMT4 worker pool."
+#endif
+
+#if FASTLED_VERSION != 3009020
+#error "Eclair7 requires FastLED 3.9.20."
 #endif
 
 // Eclair: ESP32-S3-DevKitC-1 with ESP32-S3-WROOM-1-N8R8.
@@ -61,6 +70,11 @@ static uint32_t eclairRenderedFrames = 0;
 static uint32_t eclairLastShowMicros = 0;
 static uint32_t eclairCrcErrorCount = 0;
 static uint32_t eclairLinkTimeoutCount = 0;
+
+static_assert(LED_LOGICAL_ZONE_COUNT == ECLAIR_WIRE_ZONE_COUNT, "Protocol zone count must match the LED engine");
+static_assert(LED_LOOK_COUNT == ECLAIR_WIRE_LOOK_COUNT, "Protocol look count must match saved settings");
+static_assert(ECLAIR_OUTPUT_OFF == 0 && ECLAIR_OUTPUT_ANIMATION == 4, "Output mode values must match Tardi");
+static_assert(ECLAIR_VALIDATION_RED == 0 && ECLAIR_VALIDATION_BLUE == 2, "Validation colors must match Tardi");
 
 static LedPaletteMode eclairSafePalette(uint8_t value) {
   return value <= LED_PALETTE_RAINBOW
@@ -146,7 +160,13 @@ static void eclairReadState(uint32_t nowMs) {
       continue;
     }
 
-    eclairCrcErrorCount++;
+    if (candidate.magic == ECLAIR_STATE_MAGIC
+        && candidate.protocolVersion == ECLAIR_PROTOCOL_VERSION
+        && candidate.packetType == ECLAIR_PACKET_STATE
+        && candidate.packetSize == sizeof(candidate)
+        && !eclairLinkPacketCrcIsValid(candidate)) {
+      eclairCrcErrorCount++;
+    }
     memmove(eclairStateBuffer, eclairStateBuffer + 1, sizeof(eclairStateBuffer) - 1);
     eclairStateBufferLength = sizeof(eclairStateBuffer) - 1;
   }

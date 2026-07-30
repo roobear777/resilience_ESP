@@ -10,6 +10,8 @@ constexpr uint32_t ECLAIR_STATUS_MAGIC = 0x3154415A; // "ZAT1" on the wire
 constexpr uint8_t ECLAIR_PROTOCOL_VERSION = 1;
 constexpr uint8_t ECLAIR_PACKET_STATE = 1;
 constexpr uint8_t ECLAIR_PACKET_STATUS = 2;
+constexpr uint8_t ECLAIR_WIRE_ZONE_COUNT = 7;
+constexpr uint8_t ECLAIR_WIRE_LOOK_COUNT = 2;
 constexpr uint32_t ECLAIR_STATE_INTERVAL_MS = 20;
 constexpr uint32_t ECLAIR_LINK_TIMEOUT_MS = 500;
 constexpr uint32_t ECLAIR_STATUS_INTERVAL_MS = 250;
@@ -50,9 +52,9 @@ struct __attribute__((packed)) EclairStatePacket {
   uint16_t animationDurationSeconds;
   uint8_t paletteMode;
   uint8_t behaviorMode;
-  uint8_t zoneBrightness[7];
-  EclairWireLookSettings globalLook[2];
-  EclairWireLookSettings zoneLook[2][7];
+  uint8_t zoneBrightness[ECLAIR_WIRE_ZONE_COUNT];
+  EclairWireLookSettings globalLook[ECLAIR_WIRE_LOOK_COUNT];
+  EclairWireLookSettings zoneLook[ECLAIR_WIRE_LOOK_COUNT][ECLAIR_WIRE_ZONE_COUNT];
   uint16_t crc16;
 };
 
@@ -72,7 +74,8 @@ struct __attribute__((packed)) EclairStatusPacket {
   uint16_t crc16;
 };
 
-static_assert(sizeof(EclairStatePacket) < 256, "State packet must remain cheap to send");
+static_assert(sizeof(EclairStatePacket) == 119, "State packet layout changed; update the protocol version and both targets");
+static_assert(sizeof(EclairStatusPacket) == 38, "Status packet layout changed; update the protocol version and both targets");
 
 inline uint16_t eclairLinkCrc16(const uint8_t *data, size_t length) {
   uint16_t crc = 0xFFFF;
@@ -96,4 +99,3 @@ inline bool eclairLinkPacketCrcIsValid(const Packet &packet) {
 }
 
 #endif
-

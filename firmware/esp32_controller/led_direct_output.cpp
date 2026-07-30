@@ -19,6 +19,9 @@ static_assert(LED_OUTPUT_VALIDATE_SOLID == 1, "Eclair protocol mode mismatch");
 static_assert(LED_OUTPUT_VALIDATE_CHANNEL == 2, "Eclair protocol mode mismatch");
 static_assert(LED_OUTPUT_VALIDATE_COLOR == 3, "Eclair protocol mode mismatch");
 static_assert(LED_OUTPUT_ANIMATION == 4, "Eclair protocol mode mismatch");
+static_assert(LED_VALIDATION_COLOR_RED == 0 && LED_VALIDATION_COLOR_BLUE == 2, "Eclair protocol color mismatch");
+static_assert(LED_LOGICAL_ZONE_COUNT == ECLAIR_WIRE_ZONE_COUNT, "Protocol zone count must match the LED engine");
+static_assert(LED_LOOK_COUNT == ECLAIR_WIRE_LOOK_COUNT, "Protocol look count must match saved settings");
 
 static HardwareSerial eclairLinkSerial(1);
 static bool eclairLinkInitialized = false;

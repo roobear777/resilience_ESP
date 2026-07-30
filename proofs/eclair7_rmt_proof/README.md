@@ -1,9 +1,8 @@
 # Éclair 7 ordinary FastLED/RMT proof
 
-> Historical diagnostic only; this is not the production Éclair firmware.
-> Production is `firmware/eclair_controller`. This sketch intentionally retains
-> the failed Arduino-ESP32 3.3.10 / forced-RMT4 reproduction. The production
-> resolution is Arduino-ESP32 2.0.17 / IDF 4.4.7 with the pinned FastLED commit.
+> Standalone hardware proof only; this is not the production Éclair firmware.
+> Production is `firmware/eclair_controller`. This proof uses the same verified
+> RMT4 toolchain so all seven physical lanes can be tested independently.
 
 Standalone physical proof that one Éclair ESP32-S3 can drive all seven Tardi LED zones with ordinary FastLED `addLeds()` controllers.
 
@@ -11,27 +10,36 @@ Standalone physical proof that one Éclair ESP32-S3 can drive all seven Tardi LE
 
 - Board: ESP32-S3-DevKitC-1 / ESP32-S3-WROOM-1-N8R8
 - Flash/PSRAM: 8 MB / 8 MB OPI
-- Arduino-ESP32: 3.3.10
-- FastLED: 3.10.4
+- Arduino-ESP32: 2.0.17 / ESP-IDF 4.4.7
+- FastLED: 3.9.20
 - USB Mode: Hardware CDC and JTAG
 - USB CDC On Boot: Enabled
 - LED type/order: WS2812B / GRB
 - Common ESP32 and LED-power ground
 - Direct data path: ESP32-S3 GPIO to LED DIN
 
-The sketch forces the legacy RMT4 scheduler with `FASTLED_RMT5=0` before including FastLED. The adjacent `build_opt.h` supplies the required global compiler option:
+IDF4 selects the RMT4 scheduler without a `FASTLED_RMT5` override. The adjacent
+`build_opt.h` supplies the required global options:
 
 ```text
 -DESP32_ARDUINO_NO_RGB_BUILTIN=1
+-DFASTLED_RMT_MAX_CHANNELS=4
+-DFASTLED_RMT_MEM_BLOCKS=1
 ```
 
 Do not replace that compiler option with a C++ `#define` inside the sketch.
 
-## Current compile-check status
+## Compile-check status
 
-The exact Arduino-ESP32 3.3.10 / FastLED 3.10.4 combination does not currently compile with forced RMT4. With the required files exactly as above, the sketch selects RMT4 but FastLED's separately compiled implementation selects its IDF5 default, ending in an undefined `fl::ChannelEngineRMT4::create()` linker symbol. Supplying `FASTLED_RMT5=0` globally as a diagnostic exposes further compile errors inside FastLED 3.10.4's RMT4 implementation for ESP32-S3/IDF5, including unavailable `RMTMEM` and `ChannelEngineRMT4Impl` interface mismatches.
+Arduino-ESP32 2.0.17 with FastLED 3.9.20 compiles all seven controllers. The
+verified ELF contains `ESP32RMTController`, `startNext()` and `RMTMEM`, with no
+`ClocklessBlockingGeneric` fallback.
 
-This is a pinned-library/toolchain blocker, not evidence about physical LED output. Do not treat the flashing steps below as completed until that compile incompatibility is resolved or a different approved toolchain is selected.
+The rejected Arduino-ESP32 3.3.10/FastLED 3.10.4 pairing failed in the forced
+RMT4 implementation. Do not restore it merely because an alternate fallback
+can compile. Binary driver checks still do not prove physical LED output.
+
+Verified clean proof build: 321,033 bytes flash and 26,108 bytes static RAM.
 
 ## Lane map
 

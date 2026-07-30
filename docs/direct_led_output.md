@@ -38,11 +38,10 @@ or series data resistor.
 
 ## FastLED toolchain
 
-Eclair uses pinned FastLED revision
-`fa79f3f757ca2dadd5db7773b2bed5c13b26b33a` (3.10.4) with Arduino-ESP32 2.0.17.
-That IDF 4.x combination selects FastLED RMT4 and schedules seven controllers
-over the ESP32-S3's four TX channels. Arduino-ESP32 3.3.10 / IDF 5.x cannot
-compile that pinned revision's RMT4 implementation. Tardi remains on core
+Eclair uses FastLED 3.9.20 with Arduino-ESP32 2.0.17 / IDF 4.4.7. That
+combination selects FastLED RMT4 and schedules seven registered controllers
+over the ESP32-S3's four TX workers. Arduino-ESP32 3.3.10 / IDF5 with FastLED
+3.10.4 cannot compile the forced RMT4 implementation. Tardi remains on core
 3.3.10 and does not link FastLED.
 
 The five-second startup check remains Tardi-controlled: it sets a temporary

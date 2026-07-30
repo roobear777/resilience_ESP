@@ -1,14 +1,13 @@
 // Éclair 7 ordinary FastLED/RMT proof
 // First-flash baseline:
-//   ESP32 Arduino core 3.3.10
-//   FastLED 3.10.4
+//   ESP32 Arduino core 2.0.17 / ESP-IDF 4.4.7
+//   FastLED 3.9.20
 //   ESP32-S3-DevKitC-1 / WROOM-1-N8R8
 //
-// This deliberately forces FastLED's RMT4 scheduler on ESP-IDF 5.
+// IDF4 selects FastLED's RMT4 scheduler without FASTLED_RMT5 overrides.
 // Seven controllers are registered; up to four S3 RMT TX workers are
 // used concurrently and the remaining controllers are time-multiplexed.
 
-#define FASTLED_RMT5 0
 #define FASTLED_RMT_MEM_WORDS_PER_CHANNEL 48
 #define FASTLED_RMT_MEM_BLOCKS 1
 #define FASTLED_RMT_MAX_CHANNELS 4
@@ -24,6 +23,14 @@
 
 #if !defined(CONFIG_IDF_TARGET_ESP32S3)
 #error "This proof sketch is for ESP32-S3 only."
+#endif
+
+#if ESP_ARDUINO_VERSION != ESP_ARDUINO_VERSION_VAL(2, 0, 17)
+#error "This proof requires Arduino-ESP32 2.0.17 / IDF4."
+#endif
+
+#if FASTLED_VERSION != 3009020
+#error "This proof requires FastLED 3.9.20."
 #endif
 
 namespace {
@@ -105,14 +112,14 @@ const CRGB LANE_COLORS[7] = {
 void printBuildIdentity() {
   Serial.println();
   Serial.println("=== ECLAIR 7 ORDINARY FASTLED/RMT PROOF ===");
-  Serial.printf("FastLED version macro: %lu (expected 3010004 for 3.10.4)\n",
+  Serial.printf("FastLED version macro: %lu (expected 3009020 for 3.9.20)\n",
                 static_cast<unsigned long>(FASTLED_VERSION));
-  Serial.printf("Arduino-ESP32: %d.%d.%d (preferred 3.3.10)\n",
+  Serial.printf("Arduino-ESP32: %d.%d.%d (required 2.0.17)\n",
                 ESP_ARDUINO_VERSION_MAJOR,
                 ESP_ARDUINO_VERSION_MINOR,
                 ESP_ARDUINO_VERSION_PATCH);
   Serial.printf("ESP-IDF: %s\n", esp_get_idf_version());
-  Serial.println("Backend requested: RMT4 (FASTLED_RMT5=0)");
+  Serial.println("Backend required: RMT4 selected by Arduino-ESP32 2.0.17 / IDF4");
   Serial.println("RMT settings: 48 words, 1 block/worker, max 4 TX workers");
   Serial.println("Controllers requested: 7 on GPIO4,5,6,7,8,9,10");
   Serial.println("Registration messages below prove software registration only.");
