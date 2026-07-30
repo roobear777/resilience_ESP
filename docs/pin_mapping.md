@@ -4,7 +4,9 @@ The compact live table is in `docs/gpio_schema.md`.
 
 ## Ownership
 
-- GPIO1/2/39/40/41/42/43 belong to direct LED lanes Z1–Z7.
+- Tardi GPIO1/2/39 belong to direct LED lanes Z1-Z3.
+- Tardi GPIO40 TX / GPIO41 RX belong to the Eclair UART1 link.
+- Eclair GPIO4/5/6/7 belong to direct LED lanes Z4-Z7; GPIO17/18 belong to UART1.
 - GPIO0 belongs internally to `LCD_CLOCKLESS` and remains unwired.
 - GPIO19/GPIO20 belong to native USB.
 - GPIO4/5/6/7/15/16/17/18 are active-HIGH button inputs.
@@ -15,7 +17,7 @@ without an explicit pin-ownership redesign.
 
 ## Native USB
 
-GPIO43 is Z7 data, so UART0 cannot be used for Serial. Build with:
+Both boards use native USB diagnostics. Build with:
 
 ```text
 USB Mode: Hardware CDC and JTAG

@@ -5,6 +5,7 @@
 #endif
 
 #include "led_engine.h"
+#include "eclair_link.h"
 #include "led_direct_output.h"
 #include "led_layout.h"
 #include "led_settings.h"
@@ -12,7 +13,7 @@
 #include "web_setup.h"
 
 #if !ARDUINO_USB_CDC_ON_BOOT
-#error "Enable Tools > USB CDC On Boot so Serial uses native USB GPIO19/GPIO20; UART0 conflicts with the Z7 LED lane on GPIO43."
+#error "Enable Tools > USB CDC On Boot so Tardi diagnostics preserve native USB on GPIO19/GPIO20."
 #endif
 
 // ==================================================
@@ -90,14 +91,13 @@ const bool USE_INTERNAL_PULLDOWNS = false;
 // Keep all raw GPIO numbers in this section.
 //
 // Reserved / internally owned:
-// - GPIO0: FastLED LCD_CLOCKLESS dummy/padding signal; leave unwired
+// - GPIO0: FastLED LCD_CLOCKLESS internal ownership; leave unwired
 // - GPIO19/GPIO20: native USB D-/D+
 // - GPIO48: likely onboard RGB/status LED related
 //
-// Direct FastLED data lanes are GPIO1, GPIO2, GPIO39, GPIO40, GPIO41,
-// GPIO42, and GPIO43 for Z1 through Z7. OLED support and Pixelblaze Output
-// Expander output have been removed. Direct ambient animation output starts
-// automatically after setup completes.
+// Tardi drives Z1-Z3 on GPIO1/GPIO2/GPIO39. UART1 GPIO40 TX / GPIO41 RX
+// carries authoritative LED state to Eclair, which renders and drives Z4-Z7.
+// OLED support and Pixelblaze Output Expander output remain removed.
 
 const int BUTTON_PINS[NUM_BUTTONS] = {
   4,  // Button 1
@@ -185,6 +185,7 @@ void setup() {
   ledSettingsBegin();
   ledEngineBegin();
   ledDirectOutputBegin();
+  eclairLinkBegin();
   ledDirectOutputRunStartupHardwareTest(Serial);
   webSetupBegin(true, Serial);
 }
@@ -201,6 +202,7 @@ void loop() {
   bool bigPoofStartedThisLoop = updateInteractionLogic();
   updateLedTriggers(bigPoofStartedThisLoop);
   updateLedOutputs();
+  eclairLinkUpdate(millis());
   updateFireOutputs();
   printSerialDebugIfDue();
   webSetupLoop();

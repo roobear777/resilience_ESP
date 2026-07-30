@@ -22,6 +22,10 @@ static String webSetupLiveOutputLabel() {
     return "SIM ONLY";
   }
 
+  if (!ledDirectOutputLinkOnline()) {
+    return "ON / ECLAIR OFFLINE";
+  }
+
   return ledSettingsAmbientIsCompletelyDark() ? "ON / SETTINGS DARK" : "ON";
 }
 
@@ -131,12 +135,14 @@ static String webSetupJsonStatus() {
   json += ledDirectOutputAllowed() ? "true" : "false";
   json += ",\"firstShowAttempted\":";
   json += ledDirectOutputFirstShowAttempted() ? "true" : "false";
+  json += ",\"eclairLinkOnline\":";
+  json += ledDirectOutputLinkOnline() ? "true" : "false";
   json += ",\"savedAmbientDark\":";
   json += ledSettingsAmbientIsCompletelyDark() ? "true" : "false";
   json += ",\"mode\":\"";
   json += ledDirectOutputModeName();
-  json += "\",\"ledBackend\":\"FastLED LCD_CLOCKLESS\"";
-  json += ",\"ledPins\":\"1,2,39,40,41,42,43\"";
+  json += "\",\"ledBackend\":\"LED Twin: Tardi LCD_CLOCKLESS / Eclair RMT4\"";
+  json += ",\"ledPins\":\"Tardi:1,2,39 Eclair:4,5,6,7\"";
   json += ",\"settings\":{\"brightness\":";
   json += String(settings.masterBrightness);
   json += ",\"brightnessPercent\":";

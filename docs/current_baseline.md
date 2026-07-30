@@ -11,9 +11,10 @@ USB CDC On Boot: Enabled
 Serial: native USB, 115200 baud
 ```
 
-The ESP32 owns button debounce, accepted interactions, FIRE outputs and
-cutoffs, LED rendering, direct LED transmission, saved LED settings, Serial
-diagnostics, and the Wi-Fi controller.
+Tardi owns button debounce, accepted interactions, FIRE outputs and cutoffs,
+saved LED settings, Serial diagnostics, Wi-Fi/web control, LED rendering, and
+physical Z1-Z3 output. It sends authoritative LED state to Eclair, which
+renders the shared engine and physically drives Z4-Z7.
 
 ## Live Configuration
 
@@ -30,8 +31,9 @@ No command or setup button is required for normal operation.
 
 1. FIRE pins are driven HIGH/idle.
 2. Saved LED settings are loaded, or full defaults are used.
-3. Seven `LCD_CLOCKLESS` lanes are registered.
-4. A five-second moving LED hardware check runs at temporary 4–15% brightness
+3. Tardi registers three local lanes and starts the Eclair UART link; Eclair
+   starts its four lanes black.
+4. A five-second moving LED hardware check runs on both boards at temporary 4–15% brightness
    and fixed 100% speed, independent of saved brightness and speed settings.
 5. Normal rendering resumes immediately from the untouched saved settings.
 6. The Wi-Fi AP starts and normal loop operation begins.
@@ -66,9 +68,9 @@ button is required to re-arm.
 
 ## LEDs
 
-The direct output map is defined in `docs/direct_led_output.md`. The animation
-engine and FastLED frame contain 1,908 pixels. Z3 is a full 400-pixel logical
-and physical animation lane. Ambient rendering is continuous. Accepted button
+The split output map is defined in `docs/direct_led_output.md`. The logical
+engine contains 1,908 pixels; Tardi drives Z1-Z3 and Eclair drives Z4-Z7. Z3 is
+a full 400-pixel logical and physical animation lane. Ambient rendering is continuous. Accepted button
 events activate zones for the saved animation duration, which defaults to 10
 seconds.
 

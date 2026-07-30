@@ -1,108 +1,31 @@
-# Tardi Controller — Build Handoff
+# Tardi LED Twin controller
 
-ESP32-S3 firmware for seven direct WS2812 lanes using FastLED
-`LCD_CLOCKLESS`. OLED, Z8 and Pixelblaze Output Expander output are not part of
-the active build.
+Production LED Twin uses two ESP32-S3-DevKitC-1/WROOM-1-N8R8 boards. Tardi
+retains every button, FIRE output, cutoff, combo, web endpoint, Wi-Fi AP, saved
+setting, and interaction decision. Only physical LED output is split.
 
-## Required Toolchain
+- Tardi: Arduino-ESP32 3.3.10, native USB, Z1-Z3 on GPIO1/2/39.
+- Eclair: Arduino-ESP32 2.0.17, FastLED 3.9.20 RMT4, Z4-Z7 on GPIO4/5/6/7.
+- UART1: Tardi TX40 -> Eclair RX18; Tardi RX41 <- Eclair TX17; 2,000,000 baud.
+- Pixels: 1,908 total, WS2812B/GRB; Z3 remains 400 pixels.
 
-```text
-Board: ESP32-S3-DevKitC-1-N8R8
-Arduino board: ESP32S3 Dev Module
-ESP32 Arduino core: 3.3.10
-USB Mode: Hardware CDC and JTAG
-USB CDC On Boot: Enabled
-Serial: 115200 baud
-FastLED commit: fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
-```
+Tardi sends CRC-checked complete LED-state snapshots. Eclair runs synchronized
+copies of the production engine and returns CRC-checked status. Eclair starts
+black and returns to black after a 500 ms link timeout.
 
-FastLED is not bundled with this repository. Install the exact pinned commit:
+Build and wiring details are in `docs/direct_led_output.md` and
+`firmware/eclair_controller/README.md`. Hardware visibility, signal integrity,
+power, and wiring still require testing on both boards.
 
-```text
-https://github.com/FastLED/FastLED/archive/fa79f3f757ca2dadd5db7773b2bed5c13b26b33a.zip
-```
+## Build audit summary
 
-In Arduino IDE use **Sketch → Include Library → Add .ZIP Library**. Do not
-substitute an arbitrary Library Manager release: this build needs the pinned
-ESP32-S3 `LCD_CLOCKLESS` multi-chunk implementation. Remove library conflicts
-or confirm the compile log selects the pinned copy.
+The production audit checked pin ownership, FIRE/button isolation, packet
+framing and CRC handling, startup and timeout behavior, source synchronization,
+web status wording, and both compiler/library combinations. The coordinator
+diff does not alter button debounce, accepted interactions, FIRE polarity,
+pulse timing, repeat timing, combo priority, or cutoffs.
 
-Open `firmware/esp32_controller/esp32_controller.ino`, compile and upload
-normally. The build intentionally fails if USB CDC On Boot is disabled because
-UART0 conflicts with GPIO43/Z7.
-
-## LED Output
-
-| Zone | GPIO | Pixels | Frame start |
-|---:|---:|---:|---:|
-| Z1 Mouth | 1 | 208 | 0 |
-| Z2 Shoulder | 2 | 325 | 208 |
-| Z3 Midbody | 39 | 400 | 533 |
-| Z4 Rear | 40 | 300 | 933 |
-| Z5 Front legs | 41 | 300 | 1233 |
-| Z6 Back legs | 42 | 300 | 1533 |
-| Z7 Digestive | 43 | 75 | 1833 |
-
-Total: 1,908 pixels, GRB order. Z3 uses all 400 pixels and exercises FastLED's
-multi-chunk path.
-
-- GPIO0: internal `LCD_CLOCKLESS` clock/DC dummy; leave unwired.
-- GPIO19/GPIO20: native USB D−/D+.
-- GPIO38/GPIO48: temporary onboard-RGB diagnostic candidates; leave unwired.
-- LED data passes through the documented 5 V SN74AHCT244 and 100 Ω outputs.
-- ESP32, buffer and LED-system grounds must be common.
-
-## Buttons and FIRE
-
-```text
-Buttons: GPIO4, 5, 6, 7, 15, 16, 17, 18
-FIRE:    GPIO8, 9, 10, 11, 12, 13, 14, 21, 47
-```
-
-Buttons are active-HIGH with external 10k pull-downs. FIRE outputs are
-active-LOW: HIGH idle, LOW triggered.
-
-- FIRE1–FIRE8: 100 ms on press, repeating every 1,000 ms while held.
-- Button 1 + Button 8: FIRE9/Head Poof while held, maximum 10 seconds.
-- All eight buttons: FIRE1–FIRE9 for 500 ms once; release to re-arm.
-
-## Startup and Validation
-
-Boot automatically runs a five-second moving LED hardware check before Wi-Fi,
-then restores the saved look. Serial reports FastLED errors, heap state and
-channel routing. `ROUTING CONFIRMED` and `firstShowAttempted=1` do not prove
-electrical output.
-
-On the first hardware run, confirm all seven lanes and specifically all 400 Z3
-pixels animate continuously across the multi-chunk boundary.
-
-Useful Serial commands:
-
-```text
-led status
-led settings
-led animation
-led off
-led solid
-led red | led green | led blue
-led ch 1..7
-rgb test | rgb off
-wifi status
-```
-
-## Web Controller
-
-```text
-SSID: TARDI-LED
-Password: tardigrade
-Address: http://192.168.4.1
-```
-
-The web page controls LEDs only. Changes remain in RAM until `SAVE`.
-
-Authoritative detail:
-
-- `docs/current_baseline.md`
-- `docs/gpio_schema.md`
-- `docs/direct_led_output.md`
-- `docs/interaction_logic.md`
+Resolved build issues and explicit operating assumptions are recorded in
+`firmware/eclair_controller/README.md`. The important remaining validation item
+is physical testing: a successful compile, an RMT/LCD driver symbol, or a
+first-show diagnostic cannot prove that a powered LED strip emitted light.

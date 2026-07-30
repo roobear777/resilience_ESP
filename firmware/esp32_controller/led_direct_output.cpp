@@ -7,11 +7,13 @@
 #include "platforms/esp/32/drivers/lcd_spi/bus_traits.h"
 
 #include "led_config.h"
+#include "eclair_link.h"
 #include "led_color_convert.h"
 #include "led_engine.h"
 #include "led_settings.h"
 
-constexpr uint8_t FASTLED_LANE_COUNT = 7;
+constexpr uint8_t FASTLED_LANE_COUNT = 3;
+constexpr uint16_t TARDI_LOCAL_PIXEL_COUNT = 933;
 constexpr uint32_t LED_STARTUP_HARDWARE_TEST_MS = 5000;
 constexpr bool ENABLE_REAL_FASTLED_OUTPUT = true;
 constexpr LedOutputMode DEFAULT_LED_OUTPUT_MODE = LED_OUTPUT_ANIMATION;
@@ -26,20 +28,16 @@ struct LedDirectLaneConfig {
 constexpr LedDirectLaneConfig FASTLED_LANES[FASTLED_LANE_COUNT] = {
   { 1, 1, 208, 0 },     // Z1 mouth
   { 2, 2, 325, 208 },   // Z2 shoulder
-  { 3, 39, 400, 533 },  // Z3 midbody
-  { 4, 40, 300, 933 },  // Z4 rear
-  { 5, 41, 300, 1233 }, // Z5 front legs
-  { 6, 42, 300, 1533 }, // Z6 back legs
-  { 7, 43, 75, 1833 }   // Z7 digestive
+  { 3, 39, 400, 533 }   // Z3 midbody
 };
 
 static_assert(LED_TOTAL_PIXEL_COUNT == 1908, "Unexpected logical LED count");
 static_assert(
-  FASTLED_LANES[6].startIndex + FASTLED_LANES[6].pixelCount == LED_TOTAL_PIXEL_COUNT,
-  "FastLED frame layout is inconsistent"
+  FASTLED_LANES[2].startIndex + FASTLED_LANES[2].pixelCount == TARDI_LOCAL_PIXEL_COUNT,
+  "Tardi local FastLED frame layout is inconsistent"
 );
 
-static CRGB ledFastLedFrame[LED_TOTAL_PIXEL_COUNT];
+static CRGB ledFastLedFrame[TARDI_LOCAL_PIXEL_COUNT];
 
 static bool ledDirectOutputInitialized = false;
 static bool ledFastLedOutputArmed = false;
@@ -234,12 +232,12 @@ static void ledDirectOutputStart() {
 }
 
 void ledDirectOutputBegin() {
-  fill_solid(ledFastLedFrame, LED_TOTAL_PIXEL_COUNT, CRGB::Black);
+  fill_solid(ledFastLedFrame, TARDI_LOCAL_PIXEL_COUNT, CRGB::Black);
   ledFastLedRegisterControllers();
 
   ledDirectOutputInitialized = true;
   Serial.println("FastLED direct backend: READY");
-  Serial.println("FastLED lanes: GPIO1,2,39,40,41,42,43; GPIO0 internal LCD_CLOCKLESS dummy/padding, unwired");
+  Serial.println("Tardi FastLED lanes: Z1-Z3 GPIO1,2,39; GPIO0 internal LCD_CLOCKLESS ownership, unwired");
 }
 
 static bool ledDirectOutputStartIfAllowed(Stream &out) {
@@ -257,7 +255,7 @@ static void ledDirectOutputShowFrameIfStarted(uint32_t nowMs) {
     return;
   }
 
-  for (uint16_t logicalPixelIndex = 0; logicalPixelIndex < LED_TOTAL_PIXEL_COUNT; logicalPixelIndex++) {
+  for (uint16_t logicalPixelIndex = 0; logicalPixelIndex < TARDI_LOCAL_PIXEL_COUNT; logicalPixelIndex++) {
     LedRgbColor rgb = ledDirectRenderRgb(logicalPixelIndex, nowMs);
     ledFastLedFrame[logicalPixelIndex] = CRGB(rgb.r, rgb.g, rgb.b);
   }
@@ -276,11 +274,11 @@ static void ledDirectOutputShowFrameIfStarted(uint32_t nowMs) {
     LedFastLedHeapSnapshot after = ledFastLedCaptureHeap();
     ledFastLedPrintHeap("after", after);
     if (ledFastLedFirstShowEnqueuedCount == FASTLED_LANE_COUNT && !ledFastLedFirstShowDriverMismatch) {
-      Serial.println("ROUTING CONFIRMED: 7/7 real lanes use LCD_CLOCKLESS");
+      Serial.println("ROUTING CONFIRMED: 3/3 Tardi lanes use LCD_CLOCKLESS");
     } else {
       Serial.print("ROUTING FAILED: enqueued=");
       Serial.print(ledFastLedFirstShowEnqueuedCount);
-      Serial.print(" expected=7 driverMismatch=");
+      Serial.print(" expected=3 driverMismatch=");
       Serial.println(ledFastLedFirstShowDriverMismatch ? 1 : 0);
     }
     ledFastLedFirstShowPending = false;
@@ -322,6 +320,7 @@ void ledDirectOutputRunStartupHardwareTest(Stream &out) {
     uint32_t nowMs = millis();
     ledEngineUpdate(nowMs);
     ledDirectOutputShowFrameIfStarted(nowMs);
+    eclairLinkUpdate(nowMs);
     delay(1);
   }
 
@@ -345,6 +344,10 @@ bool ledDirectOutputFirstShowAttempted() {
   return ledFastLedFirstShowAttempted;
 }
 
+bool ledDirectOutputLinkOnline() {
+  return eclairLinkOnline();
+}
+
 const char *ledDirectOutputModeName() {
   switch (ledDirectRuntimeMode) {
     case LED_OUTPUT_VALIDATE_COLOR:
@@ -359,6 +362,18 @@ const char *ledDirectOutputModeName() {
     default:
       return "OFF";
   }
+}
+
+LedOutputMode ledDirectOutputMode() {
+  return ledDirectRuntimeMode;
+}
+
+uint8_t ledDirectOutputValidationLane() {
+  return ledDirectValidationLane > 0 ? static_cast<uint8_t>(ledDirectValidationLane) : 0;
+}
+
+LedValidationColor ledDirectOutputValidationColor() {
+  return ledDirectValidationColor;
 }
 
 static const char *ledDirectOutputValidationColorName() {
@@ -409,7 +424,7 @@ bool ledDirectOutputSetMode(LedOutputMode mode, Stream &out) {
 }
 
 bool ledDirectOutputSetLaneValidationMode(uint8_t laneId, Stream &out) {
-  if (ledDirectLaneConfigFor(laneId) == nullptr) {
+  if (laneId < 1 || laneId > LED_LOGICAL_ZONE_COUNT) {
     out.println("LED channel must be 1..7");
     return false;
   }
@@ -440,7 +455,7 @@ bool ledDirectOutputSetColorValidationMode(LedValidationColor color, Stream &out
 }
 
 void ledDirectOutputPrintRuntimeStatus(Stream &out) {
-  out.print("LED backend=FastLED/LCD_CLOCKLESS mode=");
+  out.print("LED backend=LED-Twin Tardi-LCD/Eclair-RMT4 mode=");
   out.print(ledDirectOutputModeName());
 
   if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
@@ -457,9 +472,10 @@ void ledDirectOutputPrintRuntimeStatus(Stream &out) {
   out.print(ledDirectOutputAllowed() ? 1 : 0);
   out.print(" firstShowAttempted=");
   out.print(ledDirectOutputFirstShowAttempted() ? 1 : 0);
+  eclairLinkPrintStatus(out);
   out.print(" savedDark=");
   out.print(ledSettingsAmbientIsCompletelyDark() ? 1 : 0);
-  out.print(" lanes=7 pixels=");
-  out.print(LED_TOTAL_PIXEL_COUNT);
-  out.println(" z3=400 pins=1,2,39,40,41,42,43 dummy=0 order=GRB");
+  out.print(" localLanes=3 localPixels=");
+  out.print(TARDI_LOCAL_PIXEL_COUNT);
+  out.println(" z3=400 tardiPins=1,2,39 uart=40,41 eclairPins=4,5,6,7 order=GRB");
 }

@@ -9,7 +9,7 @@ accepted controller event
 -> HSV LedColor
 -> palette/behavior/brightness settings
 -> RGB CRGB frame
--> seven FastLED LCD_CLOCKLESS channels (GRB wire order)
+-> Tardi Z1-Z3 LCD_CLOCKLESS + CRC state link + Eclair Z4-Z7 RMT4 (GRB)
 ```
 
 The controller owns inputs, FIRE, and accepted trigger events. The LED engine

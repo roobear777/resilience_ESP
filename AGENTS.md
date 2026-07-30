@@ -2,7 +2,8 @@
 
 ## Current Hardware Build
 
-The live firmware uses seven direct FastLED `LCD_CLOCKLESS` lanes. The
+The live LED Twin firmware uses two boards. Tardi drives Z1-Z3 with FastLED
+`LCD_CLOCKLESS`; Eclair drives Z4-Z7 with FastLED RMT4. The
 Pixelblaze Output Expander, OLED, Z8/button-station LEDs, and GPIO40 setup
 button are not active hardware.
 
@@ -10,10 +11,12 @@ button are not active hardware.
 GPIO1   -> Z1 Mouth, 208 pixels
 GPIO2   -> Z2 Shoulder, 325 pixels
 GPIO39  -> Z3 Midbody, 400 pixels
-GPIO40  -> Z4 Rear, 300 pixels
-GPIO41  -> Z5 Front legs, 300 pixels
-GPIO42  -> Z6 Back legs, 300 pixels
-GPIO43  -> Z7 Digestive, 75 pixels
+Tardi GPIO40 TX -> Eclair GPIO18 RX
+Tardi GPIO41 RX <- Eclair GPIO17 TX
+Eclair GPIO4 -> Z4 Rear, 300 pixels
+Eclair GPIO5 -> Z5 Front legs, 300 pixels
+Eclair GPIO6 -> Z6 Back legs, 300 pixels
+Eclair GPIO7 -> Z7 Digestive, 75 pixels
 GPIO0   -> LCD_CLOCKLESS internal dummy/padding, unwired
 ```
 
@@ -58,8 +61,7 @@ released = LOW
 pressed  = HIGH / 3.3V
 ```
 
-GPIO19/GPIO20 are native USB D-/D+. USB CDC On Boot is mandatory because
-UART0 conflicts with GPIO43/Z7. Do not move Serial back to UART0.
+GPIO19/GPIO20 are native USB D-/D+ on both boards. USB CDC On Boot is mandatory.
 
 ## Live Build Settings
 
@@ -80,18 +82,19 @@ normal operation.
 
 ## FastLED Rules
 
-Required revision:
+Tardi required revision:
 
 ```text
 fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
 ```
 
-Use the explicit FastLED channel API with `Bus::LCD_CLOCKLESS`. Do not replace
+Tardi uses the explicit FastLED channel API with `Bus::LCD_CLOCKLESS` for three
+lanes. Eclair uses FastLED 3.9.20 with Arduino-ESP32 2.0.17/RMT4 for four lanes. Do not replace
 it with default `addLeds` routing, FastLED RMT, NeoPixelBus, or Adafruit
 NeoPixel without an explicit backend task.
 
 GPIO0 is used internally by the ESP32-S3 LCD/I80 peripheral and must remain
-unwired. Register exactly seven real lanes; do not add a dummy LED controller.
+unwired on Tardi. Register exactly three Tardi lanes and four Eclair lanes; do not add a dummy LED controller.
 
 The LED frame starts black, but normal animation transmits automatically.
 First-show diagnostics confirm routing and heap state; they do not prove
