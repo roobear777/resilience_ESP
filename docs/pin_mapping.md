@@ -1,42 +1,48 @@
 # Pin Mapping Rules
 
-The compact live table is in `docs/gpio_schema.md`.
+The production Eclair7 architecture uses two ESP32-S3-DevKitC-1 boards with
+ESP32-S3-WROOM-1-N8R8 modules. GPIO numbers on different boards do not conflict.
 
-## Ownership
+## Tardi ownership
 
-- GPIO1/2/39/40/41/42/43 belong to direct LED lanes Z1–Z7.
-- GPIO0 belongs internally to `LCD_CLOCKLESS` and remains unwired.
-- GPIO19/GPIO20 belong to native USB.
-- GPIO4/5/6/7/15/16/17/18 are active-HIGH button inputs.
-- GPIO8/9/10/11/12/13/14/21/47 are active-LOW FIRE outputs.
+- GPIO4/5/6/7/15/16/17/18: active-HIGH button inputs with external 10k pull-downs.
+- GPIO8/9/10/11/12/13/14/21/47: active-LOW FIRE1-FIRE9 outputs.
+- GPIO40: UART1 TX to Eclair GPIO18.
+- GPIO41: UART1 RX from Eclair GPIO17.
+- GPIO19/GPIO20: native USB D-/D+.
 
-Do not restore OLED, Output Expander UART, or the old GPIO40 setup button
-without an explicit pin-ownership redesign.
+Tardi has no physical LED data outputs. OLED, Pixelblaze Output Expander, Z8,
+and the former GPIO40 web-setup button remain absent.
+
+## Eclair ownership
+
+| Zone | GPIO | Pixels |
+|---:|---:|---:|
+| Z1 Mouth | 4 | 208 |
+| Z2 Shoulder | 5 | 325 |
+| Z3 Midbody | 6 | 400 |
+| Z4 Rear | 7 | 300 |
+| Z5 Front legs | 8 | 300 |
+| Z6 Back legs | 9 | 300 |
+| Z7 Digestive | 10 | 75 |
+
+Eclair GPIO18 is UART1 RX from Tardi GPIO40. Eclair GPIO17 is UART1 TX to
+Tardi GPIO41. GPIO19/GPIO20 remain native USB D-/D+.
 
 ## Native USB
 
-GPIO43 is Z7 data, so UART0 cannot be used for Serial. Build with:
+Build both boards with Hardware CDC and USB CDC On Boot enabled. Both sketches
+intentionally fail compilation when USB CDC On Boot is disabled.
+
+## Selected LED electrical path
 
 ```text
-USB Mode: Hardware CDC and JTAG
-USB CDC On Boot: Enabled
+Eclair ESP32-S3 GPIO -> 5 V WS2812-class LED DIN
 ```
 
-The firmware intentionally fails compilation when USB CDC On Boot is disabled.
+There is no buffer, level shifter, or series data resistor in the selected
+architecture. ESP32, Tardi, Eclair, and LED-power grounds are common. Never
+apply 5 V to an ESP32 input or GPIO rail.
 
-## LED Electrical Rules
-
-ESP32 LED GPIOs are 3.3 V signals. Feed zone DIN through the documented
-SN74AHCT244 5 V logic buffer and 100 ohm series resistors. Never apply 5 V to
-an ESP32 pin. All logic and LED-system grounds must be common.
-
-## Caution Pins
-
-| GPIO | Rule |
-|---:|---|
-| 0 | Internal LCD dummy; unwired; also a strap pin |
-| 35/36/37 | Avoid on N8R8/octo-PSRAM hardware |
-| 45/46 | Strap pins; avoid |
-| 48 | Onboard RGB/status LED; avoid |
-
-The board-labelled TX/RX pins are not substitutes for native USB.
+Avoid GPIO35/36/37 on N8R8 octal-PSRAM hardware, strap pins GPIO0/45/46, and
+the likely onboard RGB/status pin GPIO48.

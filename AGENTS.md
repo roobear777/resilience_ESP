@@ -2,19 +2,21 @@
 
 ## Current Hardware Build
 
-The live firmware uses seven direct FastLED `LCD_CLOCKLESS` lanes. The
-Pixelblaze Output Expander, OLED, Z8/button-station LEDs, and GPIO40 setup
-button are not active hardware.
+The live Eclair7 firmware uses two ESP32-S3-DevKitC-1 / WROOM-1-N8R8 boards.
+Tardi retains buttons, FIRE, web/settings, and interaction authority. Eclair
+renders and drives all seven LED zones. The Pixelblaze Output Expander, OLED,
+Z8/button-station LEDs, and physical setup button are not active hardware.
 
 ```text
-GPIO1   -> Z1 Mouth, 208 pixels
-GPIO2   -> Z2 Shoulder, 325 pixels
-GPIO39  -> Z3 Midbody, 400 pixels
-GPIO40  -> Z4 Rear, 300 pixels
-GPIO41  -> Z5 Front legs, 300 pixels
-GPIO42  -> Z6 Back legs, 300 pixels
-GPIO43  -> Z7 Digestive, 75 pixels
-GPIO0   -> LCD_CLOCKLESS internal dummy/padding, unwired
+Tardi GPIO40 TX -> Eclair GPIO18 RX
+Tardi GPIO41 RX <- Eclair GPIO17 TX
+Eclair GPIO4    -> Z1 Mouth, 208 pixels
+Eclair GPIO5    -> Z2 Shoulder, 325 pixels
+Eclair GPIO6    -> Z3 Midbody, 400 pixels
+Eclair GPIO7    -> Z4 Rear, 300 pixels
+Eclair GPIO8    -> Z5 Front legs, 300 pixels
+Eclair GPIO9    -> Z6 Back legs, 300 pixels
+Eclair GPIO10   -> Z7 Digestive, 75 pixels
 ```
 
 Total logical and physical pixels: 1,908. Wire order is GRB. Z3 must remain a
@@ -58,25 +60,24 @@ released = LOW
 pressed  = HIGH / 3.3V
 ```
 
-GPIO19/GPIO20 are native USB D-/D+. USB CDC On Boot is mandatory because
-UART0 conflicts with GPIO43/Z7. Do not move Serial back to UART0.
+GPIO19/GPIO20 are native USB D-/D+ on both boards. USB CDC On Boot is
+mandatory. Do not move diagnostics back to UART0.
 
 ## Live Build Settings
 
 ```cpp
-ENABLE_REAL_FASTLED_OUTPUT = true
+ENABLE_REAL_ECLAIR_OUTPUT = true
 FIRE_OUTPUTS_ENABLED = true
 USE_INTERNAL_PULLDOWNS = false
 ```
 
 OLED code and libraries are removed, not merely compiled out.
 
-The boot mode is automatic LED animation. After Serial and LED initialization,
-a blocking five-second moving hardware check runs before Wi-Fi. It uses
-temporary visible brightness and fixed nonzero speed without modifying saved
-settings, then immediately resumes normal saved rendering. Do not reintroduce
-the old update-loop warm-up or fade. No command or setup button is required for
-normal operation.
+The boot mode is automatic LED animation. After Serial and link initialization,
+a blocking five-second moving hardware check is requested from Eclair before
+Wi-Fi. It uses temporary visible brightness and fixed nonzero speed without
+modifying saved settings, then immediately resumes normal saved rendering. No
+command or setup button is required for normal operation.
 
 ## FastLED Rules
 
@@ -86,15 +87,12 @@ Required revision:
 fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
 ```
 
-Use the explicit FastLED channel API with `Bus::LCD_CLOCKLESS`. Do not replace
-it with default `addLeds` routing, FastLED RMT, NeoPixelBus, or Adafruit
-NeoPixel without an explicit backend task.
+Eclair must use Arduino-ESP32 2.0.17 / IDF4 so the pinned FastLED RMT4 worker
+pool can schedule seven registered controllers over four ESP32-S3 TX channels.
+Tardi remains on Arduino-ESP32 3.3.10 and must not drive local LED lanes.
 
-GPIO0 is used internally by the ESP32-S3 LCD/I80 peripheral and must remain
-unwired. Register exactly seven real lanes; do not add a dummy LED controller.
-
-The LED frame starts black, but normal animation transmits automatically.
-First-show diagnostics confirm routing and heap state; they do not prove
+The Eclair LED frame starts black. A 500 ms link timeout forces it black until
+a valid state packet returns. Status and first-show diagnostics do not prove
 physical light output.
 
 FastLED ESP32 logging and full error handling are enabled during hardware
@@ -107,9 +105,10 @@ diagnostic build flag.
 
 Keep `firmware/esp32_controller/esp32_controller.ino` as coordinator.
 
-The LED engine must not read physical buttons or touch FIRE pins. Controller
-logic owns debounce, accepted triggers, FIRE state, Head Poof, safety cutoffs,
-Serial, and web integration.
+The LED engine must not read physical buttons or touch FIRE pins. Tardi owns
+debounce, accepted triggers, FIRE state, Head Poof, safety cutoffs, Serial,
+settings, and web integration. Eclair receives complete CRC-checked state
+snapshots, renders the engine, and owns physical LED output only.
 
 LED active state uses accepted trigger windows:
 
@@ -143,7 +142,7 @@ into live firmware.
 ## Editing Rules
 
 - Preserve FIRE/button behavior unless the task explicitly changes it.
-- Preserve native USB and direct LED pin ownership.
+- Preserve native USB, Tardi UART1 ownership, and Eclair LED pin ownership.
 - Prefer small targeted changes.
 - Keep current-facing docs aligned with firmware; archive obsolete hardware notes.
 - Do not claim software diagnostics prove physical LED wiring or power.

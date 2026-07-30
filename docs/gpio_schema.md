@@ -1,75 +1,40 @@
 # GPIO Schema
 
-Exact pin ownership for the live ESP32-S3 build.
+Exact pin ownership for the two-board Eclair7 production build.
 
-## Direct LED Data
+## Tardi
 
-| Zone | GPIO | Pixels |
-|---:|---:|---:|
-| Z1 Mouth | 1 | 208 |
-| Z2 Shoulder | 2 | 325 |
-| Z3 Midbody | 39 | 400 |
-| Z4 Rear | 40 | 300 |
-| Z5 Front legs | 41 | 300 |
-| Z6 Back legs | 42 | 300 |
-| Z7 Digestive | 43 | 75 |
-
-GPIO0 is an internal `LCD_CLOCKLESS` dummy/padding pin and must remain
-unwired. GPIO19/GPIO20 are native USB D-/D+.
-
-## Buttons
-
-| Button | GPIO |
-|---:|---:|
-| 1 | 4 |
-| 2 | 5 |
-| 3 | 6 |
-| 4 | 7 |
-| 5 | 15 |
-| 6 | 16 |
-| 7 | 17 |
-| 8 | 18 |
-
-Inputs are active-HIGH:
-
-```text
-released = LOW through external 10k pull-down
-pressed  = HIGH / 3.3V
-```
-
-## FIRE
-
-| Output | GPIO |
-|---:|---:|
-| FIRE1 | 8 |
-| FIRE2 | 9 |
-| FIRE3 | 10 |
-| FIRE4 | 11 |
-| FIRE5 | 12 |
-| FIRE6 | 13 |
-| FIRE7 | 14 |
+| Function | GPIO |
+|---|---:|
+| Button 1-4 | 4, 5, 6, 7 |
+| Button 5-8 | 15, 16, 17, 18 |
+| FIRE1-FIRE7 | 8, 9, 10, 11, 12, 13, 14 |
 | FIRE8 | 21 |
 | FIRE9 / Head Poof | 47 |
+| UART1 TX to Eclair RX | 40 |
+| UART1 RX from Eclair TX | 41 |
+| Native USB D-/D+ | 19, 20 |
 
-```text
-HIGH = idle
-LOW  = triggered
-```
+Buttons are active-HIGH with external 10k pull-downs. FIRE is active-LOW:
+HIGH is idle and LOW is triggered. Tardi drives no LED DIN.
 
-FIRE pins are logic outputs into external relay/input hardware. They do not
-power loads directly.
+## Eclair
 
-## Reserved and Retired
+| Function | GPIO |
+|---|---:|
+| Z1 (208) | 4 |
+| Z2 (325) | 5 |
+| Z3 (400) | 6 |
+| Z4 (300) | 7 |
+| Z5 (300) | 8 |
+| Z6 (300) | 9 |
+| Z7 (75) | 10 |
+| UART1 RX from Tardi TX | 18 |
+| UART1 TX to Tardi RX | 17 |
+| Native USB D-/D+ | 19, 20 |
 
-| Pin/resource | Rule |
-|---|---|
-| GPIO0 | Internal FastLED ownership; no external connection |
-| GPIO19/GPIO20 | Native USB |
-| GPIO45/GPIO46 | Strap pins; avoid |
-| GPIO48 | Onboard RGB/status LED; avoid |
-| GPIO1/GPIO2 | Direct LEDs; no OLED |
-| GPIO39 | Direct Z3 data; no Output Expander UART |
-| GPIO40 | Direct Z4 data; no setup button |
-| UART0 | Do not use; conflicts with GPIO43/Z7 |
+The seven LED lanes use GRB order and contain 1,908 pixels. The link is
+2,000,000 baud, 8N1, full duplex, with common board and LED-power ground.
 
-Never apply 5 V directly to an ESP32 GPIO.
+OLED/I2C, SPI, Pixelblaze Output Expander, Z8, and a physical web-setup button
+have no active GPIO ownership on either production firmware.

@@ -1,348 +1,210 @@
 #include "led_direct_output.h"
 
-#include <FastLED.h>
-#include <esp_heap_caps.h>
-#include "fl/channels/channel.h"
-#include "fl/channels/config.h"
-#include "platforms/esp/32/drivers/lcd_spi/bus_traits.h"
+#include <string.h>
 
+#include "eclair_link_protocol.h"
 #include "led_config.h"
-#include "led_color_convert.h"
 #include "led_engine.h"
 #include "led_settings.h"
+#include "led_state.h"
 
-constexpr uint8_t FASTLED_LANE_COUNT = 7;
+constexpr uint8_t TARDI_ECLAIR_UART_RX_PIN = 41;
+constexpr uint8_t TARDI_ECLAIR_UART_TX_PIN = 40;
 constexpr uint32_t LED_STARTUP_HARDWARE_TEST_MS = 5000;
-constexpr bool ENABLE_REAL_FASTLED_OUTPUT = true;
+constexpr bool ENABLE_REAL_ECLAIR_OUTPUT = true;
 constexpr LedOutputMode DEFAULT_LED_OUTPUT_MODE = LED_OUTPUT_ANIMATION;
 
-struct LedDirectLaneConfig {
-  uint8_t laneId;
-  uint8_t dataPin;
-  uint16_t pixelCount;
-  uint16_t startIndex;
-};
+static_assert(LED_OUTPUT_OFF == 0, "Eclair protocol mode mismatch");
+static_assert(LED_OUTPUT_VALIDATE_SOLID == 1, "Eclair protocol mode mismatch");
+static_assert(LED_OUTPUT_VALIDATE_CHANNEL == 2, "Eclair protocol mode mismatch");
+static_assert(LED_OUTPUT_VALIDATE_COLOR == 3, "Eclair protocol mode mismatch");
+static_assert(LED_OUTPUT_ANIMATION == 4, "Eclair protocol mode mismatch");
 
-constexpr LedDirectLaneConfig FASTLED_LANES[FASTLED_LANE_COUNT] = {
-  { 1, 1, 208, 0 },     // Z1 mouth
-  { 2, 2, 325, 208 },   // Z2 shoulder
-  { 3, 39, 400, 533 },  // Z3 midbody
-  { 4, 40, 300, 933 },  // Z4 rear
-  { 5, 41, 300, 1233 }, // Z5 front legs
-  { 6, 42, 300, 1533 }, // Z6 back legs
-  { 7, 43, 75, 1833 }   // Z7 digestive
-};
-
-static_assert(LED_TOTAL_PIXEL_COUNT == 1908, "Unexpected logical LED count");
-static_assert(
-  FASTLED_LANES[6].startIndex + FASTLED_LANES[6].pixelCount == LED_TOTAL_PIXEL_COUNT,
-  "FastLED frame layout is inconsistent"
-);
-
-static CRGB ledFastLedFrame[LED_TOTAL_PIXEL_COUNT];
-
-static bool ledDirectOutputInitialized = false;
-static bool ledFastLedOutputArmed = false;
+static HardwareSerial eclairLinkSerial(1);
+static bool eclairLinkInitialized = false;
 static LedOutputMode ledDirectRuntimeMode = DEFAULT_LED_OUTPUT_MODE;
-static int ledDirectValidationLane = -1;
+static int8_t ledDirectValidationLane = -1;
 static LedValidationColor ledDirectValidationColor = LED_VALIDATION_COLOR_RED;
-static bool ledFastLedFirstShowPending = true;
-static bool ledFastLedFirstShowAttempted = false;
-static uint8_t ledFastLedFirstShowEnqueuedCount = 0;
-static bool ledFastLedFirstShowDriverMismatch = false;
+static uint32_t eclairStateSequence = 0;
+static uint32_t eclairLastStateSentMs = 0;
+static uint32_t eclairLastStatusReceivedMs = 0;
+static EclairStatusPacket eclairLastStatus = {};
+static uint8_t eclairStatusBuffer[sizeof(EclairStatusPacket)] = { 0 };
+static size_t eclairStatusBufferLength = 0;
 
-struct LedFastLedHeapSnapshot {
-  size_t internal8Bit;
-  size_t internalDma;
-  size_t psram8Bit;
-  size_t largestInternal8Bit;
-  size_t largestInternalDma;
-  size_t largestPsram8Bit;
-};
-
-static const LedDirectLaneConfig *ledDirectLaneConfigFor(uint8_t laneId) {
-  for (uint8_t i = 0; i < FASTLED_LANE_COUNT; i++) {
-    if (FASTLED_LANES[i].laneId == laneId) {
-      return &FASTLED_LANES[i];
-    }
-  }
-
-  return nullptr;
-}
-
-static const LedDirectLaneConfig *ledDirectLaneConfigForLogicalIndex(uint16_t logicalPixelIndex) {
-  for (uint8_t i = 0; i < FASTLED_LANE_COUNT; i++) {
-    const LedDirectLaneConfig &config = FASTLED_LANES[i];
-    if (
-      logicalPixelIndex >= config.startIndex
-      && logicalPixelIndex < static_cast<uint16_t>(config.startIndex + config.pixelCount)
-    ) {
-      return &config;
-    }
-  }
-
-  return nullptr;
-}
-
-static LedRgbColor ledDirectValidationColorForLane(uint8_t laneId) {
-  static const LedRgbColor colors[8] = {
-    { 12, 6, 0 },
-    { 8, 8, 8 },
-    { 0, 12, 12 },
-    { 0, 0, 14 },
-    { 10, 0, 14 },
-    { 14, 6, 0 },
-    { 14, 10, 0 },
-    { 14, 0, 0 }
-  };
-
-  if (laneId >= 8) {
-    return { 0, 0, 0 };
-  }
-
-  return colors[laneId];
-}
-
-static LedRgbColor ledDirectValidationRgbForColor(LedValidationColor color) {
-  switch (color) {
+static const char *ledDirectOutputValidationColorName() {
+  switch (ledDirectValidationColor) {
     case LED_VALIDATION_COLOR_GREEN:
-      return { 0, 12, 0 };
+      return "green";
     case LED_VALIDATION_COLOR_BLUE:
-      return { 0, 0, 12 };
+      return "blue";
     case LED_VALIDATION_COLOR_RED:
     default:
-      return { 12, 0, 0 };
+      return "red";
   }
 }
 
-static LedRgbColor ledDirectRenderRgb(uint16_t logicalPixelIndex, uint32_t nowMs) {
-  if (ledDirectRuntimeMode == LED_OUTPUT_OFF) {
-    return { 0, 0, 0 };
+static void ledDirectCopyLookToWire(
+  EclairWireLookSettings &wire,
+  const LedLookSettings &look
+) {
+  wire.brightness = look.brightness;
+  wire.saturation = look.saturation;
+  wire.speedPercent = look.speedPercent;
+  wire.paletteMode = static_cast<uint8_t>(look.paletteMode);
+  wire.behaviorMode = static_cast<uint8_t>(look.behaviorMode);
+}
+
+static void ledDirectBuildStatePacket(EclairStatePacket &packet, uint32_t nowMs) {
+  memset(&packet, 0, sizeof(packet));
+  packet.magic = ECLAIR_STATE_MAGIC;
+  packet.protocolVersion = ECLAIR_PROTOCOL_VERSION;
+  packet.packetType = ECLAIR_PACKET_STATE;
+  packet.packetSize = sizeof(packet);
+  packet.sequence = ++eclairStateSequence;
+  packet.senderNowMs = nowMs;
+  packet.activeZoneMask = ledActiveZoneMask(nowMs);
+  packet.outputMode = static_cast<uint8_t>(ledDirectRuntimeMode);
+  packet.validationLane = ledDirectValidationLane > 0
+    ? static_cast<uint8_t>(ledDirectValidationLane)
+    : 0;
+  packet.validationColor = static_cast<uint8_t>(ledDirectValidationColor);
+
+  if (ledEngineIsPressureTestEnabled()) {
+    packet.flags |= ECLAIR_FLAG_PRESSURE_TEST;
+  }
+  if (ledEngineIsAllGreenOverrideEnabled()) {
+    packet.flags |= ECLAIR_FLAG_ALL_GREEN;
+  }
+  if (ledEngineIsStartupHardwareTestEnabled()) {
+    packet.flags |= ECLAIR_FLAG_STARTUP_TEST;
   }
 
-  if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_SOLID) {
-    return { 8, 8, 8 };
+  const LedSettings &settings = ledSettingsGet();
+  packet.masterBrightness = settings.masterBrightness;
+  packet.saturationScale = settings.saturationScale;
+  packet.ambientLevel = settings.ambientLevel;
+  packet.activeLevel = settings.activeLevel;
+  packet.speedPercent = settings.speedPercent;
+  packet.animationDurationSeconds = settings.animationDurationSeconds;
+  packet.paletteMode = static_cast<uint8_t>(settings.paletteMode);
+  packet.behaviorMode = static_cast<uint8_t>(settings.behaviorMode);
+
+  for (uint8_t zone = 0; zone < LED_LOGICAL_ZONE_COUNT; zone++) {
+    packet.zoneBrightness[zone] = settings.zoneBrightness[zone];
+  }
+  for (uint8_t look = 0; look < LED_LOOK_COUNT; look++) {
+    ledDirectCopyLookToWire(packet.globalLook[look], settings.globalLook[look]);
+    for (uint8_t zone = 0; zone < LED_LOGICAL_ZONE_COUNT; zone++) {
+      ledDirectCopyLookToWire(packet.zoneLook[look][zone], settings.zoneLook[look][zone]);
+    }
   }
 
-  if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
-    const LedDirectLaneConfig *config = ledDirectLaneConfigForLogicalIndex(logicalPixelIndex);
-    if (config == nullptr || config->laneId != ledDirectValidationLane) {
-      return { 0, 0, 0 };
+  eclairLinkFinalizePacket(packet);
+}
+
+static bool ledDirectStatusPacketIsValid(const EclairStatusPacket &packet) {
+  return packet.magic == ECLAIR_STATUS_MAGIC
+    && packet.protocolVersion == ECLAIR_PROTOCOL_VERSION
+    && packet.packetType == ECLAIR_PACKET_STATUS
+    && packet.packetSize == sizeof(packet)
+    && eclairLinkPacketCrcIsValid(packet);
+}
+
+static void ledDirectReadStatus(uint32_t nowMs) {
+  while (eclairLinkSerial.available() > 0) {
+    eclairStatusBuffer[eclairStatusBufferLength++] = static_cast<uint8_t>(eclairLinkSerial.read());
+
+    if (eclairStatusBufferLength < sizeof(EclairStatusPacket)) {
+      continue;
     }
 
-    return ledDirectValidationColorForLane(config->laneId);
+    EclairStatusPacket candidate;
+    memcpy(&candidate, eclairStatusBuffer, sizeof(candidate));
+    if (ledDirectStatusPacketIsValid(candidate)) {
+      eclairLastStatus = candidate;
+      eclairLastStatusReceivedMs = nowMs;
+      eclairStatusBufferLength = 0;
+      continue;
+    }
+
+    memmove(eclairStatusBuffer, eclairStatusBuffer + 1, sizeof(eclairStatusBuffer) - 1);
+    eclairStatusBufferLength = sizeof(eclairStatusBuffer) - 1;
   }
+}
 
-  if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_COLOR) {
-    return ledDirectValidationRgbForColor(ledDirectValidationColor);
+static void ledDirectSendState(uint32_t nowMs, bool force) {
+  if (!ENABLE_REAL_ECLAIR_OUTPUT || !eclairLinkInitialized) {
+    return;
   }
-
-  LedColor hsvColor = ledEngineRenderPixel(logicalPixelIndex, nowMs);
-  return ledColorToRgb(hsvColor);
-}
-
-static LedFastLedHeapSnapshot ledFastLedCaptureHeap() {
-  LedFastLedHeapSnapshot snapshot = {
-    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
-    heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
-    heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-    heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
-    heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
-  };
-
-  return snapshot;
-}
-
-static void ledFastLedPrintHeap(const char *phase, const LedFastLedHeapSnapshot &snapshot) {
-  Serial.print("FASTLED FIRST SHOW heap ");
-  Serial.print(phase);
-  Serial.print(" internal8_free=");
-  Serial.print(snapshot.internal8Bit);
-  Serial.print(" internal8_largest=");
-  Serial.print(snapshot.largestInternal8Bit);
-  Serial.print(" internal_dma_free=");
-  Serial.print(snapshot.internalDma);
-  Serial.print(" internal_dma_largest=");
-  Serial.print(snapshot.largestInternalDma);
-  Serial.print(" psram8_free=");
-  Serial.print(snapshot.psram8Bit);
-  Serial.print(" psram8_largest=");
-  Serial.println(snapshot.largestPsram8Bit);
-}
-
-static void ledFastLedOnChannelEnqueued(const fl::IChannel &channel, const fl::string &driverName) {
-  if (!ledFastLedFirstShowPending) {
+  if (!force && (nowMs - eclairLastStateSentMs) < ECLAIR_STATE_INTERVAL_MS) {
     return;
   }
 
-  uint8_t laneIndex = ledFastLedFirstShowEnqueuedCount;
-  Serial.print("FASTLED FIRST SHOW channel id=");
-  Serial.print(channel.id());
-  Serial.print(" name=");
-  Serial.print(channel.name().c_str());
-
-  if (laneIndex < FASTLED_LANE_COUNT) {
-    const LedDirectLaneConfig &config = FASTLED_LANES[laneIndex];
-    Serial.print(" zone=Z");
-    Serial.print(config.laneId);
-    Serial.print(" pin=GPIO");
-    Serial.print(config.dataPin);
-    Serial.print(" role=REAL");
-  } else {
-    Serial.print(" role=UNEXPECTED");
-  }
-
-  Serial.print(" driver=");
-  Serial.println(driverName.c_str());
-
-  if (driverName != "LCD_CLOCKLESS") {
-    ledFastLedFirstShowDriverMismatch = true;
-  }
-
-  ledFastLedFirstShowEnqueuedCount++;
-}
-
-static void ledFastLedRegisterControllers() {
-  FastLED.channelEvents().onChannelEnqueued.add(ledFastLedOnChannelEnqueued);
-  fl::enableDrivers<fl::Bus::LCD_CLOCKLESS>();
-
-  const auto timing = fl::makeTimingConfig<fl::TIMING_WS2812_800KHZ>();
-  fl::ChannelOptions options;
-  options.mBus = fl::Bus::LCD_CLOCKLESS;
-
-  for (uint8_t laneIndex = 0; laneIndex < FASTLED_LANE_COUNT; laneIndex++) {
-    const LedDirectLaneConfig &lane = FASTLED_LANES[laneIndex];
-    fl::ChannelConfig config(
-      fl::ClocklessChipset(lane.dataPin, timing),
-      fl::span<CRGB>(ledFastLedFrame + lane.startIndex, lane.pixelCount),
-      GRB,
-      options
-    );
-    FastLED.add(fl::Channel::create(config));
-  }
-
-  FastLED.setBrightness(255);
-}
-
-static void ledDirectOutputStart() {
-  if (ledFastLedOutputArmed) {
-    return;
-  }
-
-  ledFastLedOutputArmed = true;
+  EclairStatePacket packet;
+  ledDirectBuildStatePacket(packet, nowMs);
+  eclairLinkSerial.write(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
+  eclairLastStateSentMs = nowMs;
 }
 
 void ledDirectOutputBegin() {
-  fill_solid(ledFastLedFrame, LED_TOTAL_PIXEL_COUNT, CRGB::Black);
-  ledFastLedRegisterControllers();
-
-  ledDirectOutputInitialized = true;
-  Serial.println("FastLED direct backend: READY");
-  Serial.println("FastLED lanes: GPIO1,2,39,40,41,42,43; GPIO0 internal LCD_CLOCKLESS dummy/padding, unwired");
-}
-
-static bool ledDirectOutputStartIfAllowed(Stream &out) {
-  if (!ENABLE_REAL_FASTLED_OUTPUT) {
-    out.println("LED real output blocked: ENABLE_REAL_FASTLED_OUTPUT=false");
-    return false;
-  }
-
-  ledDirectOutputStart();
-  return true;
-}
-
-static void ledDirectOutputShowFrameIfStarted(uint32_t nowMs) {
-  if (!ENABLE_REAL_FASTLED_OUTPUT || !ledFastLedOutputArmed) {
-    return;
-  }
-
-  for (uint16_t logicalPixelIndex = 0; logicalPixelIndex < LED_TOTAL_PIXEL_COUNT; logicalPixelIndex++) {
-    LedRgbColor rgb = ledDirectRenderRgb(logicalPixelIndex, nowMs);
-    ledFastLedFrame[logicalPixelIndex] = CRGB(rgb.r, rgb.g, rgb.b);
-  }
-
-  if (ledFastLedFirstShowPending) {
-    ledFastLedFirstShowEnqueuedCount = 0;
-    ledFastLedFirstShowDriverMismatch = false;
-    Serial.println("FASTLED FIRST SHOW begin");
-    Serial.println("FASTLED FIRST SHOW dummy pin=GPIO0 role=INTERNAL_UNWIRED driver=LCD_CLOCKLESS no_animation_data=1");
-    LedFastLedHeapSnapshot before = ledFastLedCaptureHeap();
-    ledFastLedPrintHeap("before", before);
-
-    ledFastLedFirstShowAttempted = true;
-    FastLED.show();
-
-    LedFastLedHeapSnapshot after = ledFastLedCaptureHeap();
-    ledFastLedPrintHeap("after", after);
-    if (ledFastLedFirstShowEnqueuedCount == FASTLED_LANE_COUNT && !ledFastLedFirstShowDriverMismatch) {
-      Serial.println("ROUTING CONFIRMED: 7/7 real lanes use LCD_CLOCKLESS");
-    } else {
-      Serial.print("ROUTING FAILED: enqueued=");
-      Serial.print(ledFastLedFirstShowEnqueuedCount);
-      Serial.print(" expected=7 driverMismatch=");
-      Serial.println(ledFastLedFirstShowDriverMismatch ? 1 : 0);
-    }
-    ledFastLedFirstShowPending = false;
-    return;
-  }
-
-  FastLED.show();
+  eclairLinkSerial.setRxBufferSize(512);
+  eclairLinkSerial.begin(
+    ECLAIR_LINK_BAUD,
+    SERIAL_8N1,
+    TARDI_ECLAIR_UART_RX_PIN,
+    TARDI_ECLAIR_UART_TX_PIN
+  );
+  eclairLinkInitialized = true;
+  ledDirectSendState(millis(), true);
+  Serial.println("Eclair LED link: READY");
+  Serial.println("Eclair UART1: Tardi TX GPIO40 -> Eclair RX GPIO18; Tardi RX GPIO41 <- Eclair TX GPIO17; 2000000 baud");
 }
 
 void ledDirectOutputUpdate(uint32_t nowMs) {
-  if (ledDirectRuntimeMode == LED_OUTPUT_OFF || !ENABLE_REAL_FASTLED_OUTPUT) {
-    return;
-  }
-
-  if (!ledFastLedOutputArmed) {
-    ledDirectOutputStart();
-  }
-
-  ledDirectOutputShowFrameIfStarted(nowMs);
+  ledDirectReadStatus(nowMs);
+  ledDirectSendState(nowMs, false);
 }
 
 void ledDirectOutputRunStartupHardwareTest(Stream &out) {
-  if (!ENABLE_REAL_FASTLED_OUTPUT || !ledDirectOutputInitialized) {
-    out.println("LED HARDWARE TEST ERROR: FastLED output is unavailable");
+  if (!ENABLE_REAL_ECLAIR_OUTPUT || !eclairLinkInitialized) {
+    out.println("LED HARDWARE TEST ERROR: Eclair link is unavailable");
     return;
   }
 
   ledEngineSetStartupHardwareTestEnabled(true);
-  ledDirectOutputStart();
+  out.println("LED HARDWARE TEST: requesting 5 seconds of moving Eclair animation, brightness 4-15%, speed 100%");
 
-  out.println("LED HARDWARE TEST: 5 seconds, moving animation, brightness 4-15%, speed 100%");
-
-  uint32_t firstFrameNowMs = millis();
-  ledEngineUpdate(firstFrameNowMs);
-  ledDirectOutputShowFrameIfStarted(firstFrameNowMs);
   uint32_t testStartMs = millis();
-
+  ledDirectSendState(testStartMs, true);
   while ((millis() - testStartMs) < LED_STARTUP_HARDWARE_TEST_MS) {
-    uint32_t nowMs = millis();
-    ledEngineUpdate(nowMs);
-    ledDirectOutputShowFrameIfStarted(nowMs);
+    ledDirectOutputUpdate(millis());
     delay(1);
   }
 
   ledEngineSetStartupHardwareTestEnabled(false);
-
-  uint32_t normalNowMs = millis();
-  ledEngineUpdate(normalNowMs);
-  ledDirectOutputShowFrameIfStarted(normalNowMs);
-
+  ledDirectSendState(millis(), true);
   out.println("LED HARDWARE TEST COMPLETE: saved settings restored");
+  if (!ledDirectOutputLinkOnline()) {
+    out.println("WARNING: no Eclair status received during startup hardware test");
+  }
   if (ledSettingsAmbientIsCompletelyDark()) {
     out.println("WARNING: saved ambient settings are completely dark");
   }
 }
 
 bool ledDirectOutputAllowed() {
-  return ENABLE_REAL_FASTLED_OUTPUT;
+  return ENABLE_REAL_ECLAIR_OUTPUT;
 }
 
 bool ledDirectOutputFirstShowAttempted() {
-  return ledFastLedFirstShowAttempted;
+  return (eclairLastStatus.flags & ECLAIR_STATUS_FIRST_SHOW_ATTEMPTED) != 0;
+}
+
+bool ledDirectOutputLinkOnline() {
+  return (eclairLastStatus.flags & ECLAIR_STATUS_LINK_VALID) != 0
+    && eclairLastStatusReceivedMs != 0
+    && (millis() - eclairLastStatusReceivedMs) <= ECLAIR_LINK_TIMEOUT_MS * 2;
 }
 
 const char *ledDirectOutputModeName() {
@@ -361,105 +223,95 @@ const char *ledDirectOutputModeName() {
   }
 }
 
-static const char *ledDirectOutputValidationColorName() {
-  switch (ledDirectValidationColor) {
-    case LED_VALIDATION_COLOR_GREEN:
-      return "green";
-    case LED_VALIDATION_COLOR_BLUE:
-      return "blue";
-    case LED_VALIDATION_COLOR_RED:
-    default:
-      return "red";
-  }
-}
-
 bool ledDirectOutputSetMode(LedOutputMode mode, Stream &out) {
   if (mode == LED_OUTPUT_VALIDATE_CHANNEL) {
     out.println("Use: led ch 1..7");
     return false;
   }
-
   if (mode == LED_OUTPUT_VALIDATE_COLOR) {
     out.println("Use: led red, led green, or led blue");
     return false;
   }
-
-  if (mode == LED_OUTPUT_OFF) {
-    ledDirectRuntimeMode = LED_OUTPUT_OFF;
-    ledDirectValidationLane = -1;
-    ledDirectValidationColor = LED_VALIDATION_COLOR_RED;
-
-    if (ledFastLedFirstShowAttempted) {
-      ledDirectOutputShowFrameIfStarted(millis());
-    }
-
-    out.println("LED mode: OFF");
-    return true;
-  }
-
-  if (!ledDirectOutputStartIfAllowed(out)) {
+  if (!ENABLE_REAL_ECLAIR_OUTPUT && mode != LED_OUTPUT_OFF) {
+    out.println("LED real output blocked: ENABLE_REAL_ECLAIR_OUTPUT=false");
     return false;
   }
 
   ledDirectRuntimeMode = mode;
   ledDirectValidationLane = -1;
+  ledDirectValidationColor = LED_VALIDATION_COLOR_RED;
+  ledDirectSendState(millis(), true);
   out.print("LED mode: ");
   out.println(ledDirectOutputModeName());
   return true;
 }
 
 bool ledDirectOutputSetLaneValidationMode(uint8_t laneId, Stream &out) {
-  if (ledDirectLaneConfigFor(laneId) == nullptr) {
+  if (laneId < 1 || laneId > LED_LOGICAL_ZONE_COUNT) {
     out.println("LED channel must be 1..7");
     return false;
   }
-
-  if (!ledDirectOutputStartIfAllowed(out)) {
+  if (!ENABLE_REAL_ECLAIR_OUTPUT) {
+    out.println("LED real output blocked: ENABLE_REAL_ECLAIR_OUTPUT=false");
     return false;
   }
 
   ledDirectRuntimeMode = LED_OUTPUT_VALIDATE_CHANNEL;
   ledDirectValidationLane = laneId;
   ledDirectValidationColor = LED_VALIDATION_COLOR_RED;
+  ledDirectSendState(millis(), true);
   out.print("LED mode: VALIDATE_CHANNEL ");
   out.println(laneId);
   return true;
 }
 
 bool ledDirectOutputSetColorValidationMode(LedValidationColor color, Stream &out) {
-  if (!ledDirectOutputStartIfAllowed(out)) {
+  if (!ENABLE_REAL_ECLAIR_OUTPUT) {
+    out.println("LED real output blocked: ENABLE_REAL_ECLAIR_OUTPUT=false");
     return false;
   }
 
   ledDirectRuntimeMode = LED_OUTPUT_VALIDATE_COLOR;
   ledDirectValidationLane = -1;
   ledDirectValidationColor = color;
+  ledDirectSendState(millis(), true);
   out.print("LED mode: VALIDATE_COLOR ");
   out.println(ledDirectOutputValidationColorName());
   return true;
 }
 
 void ledDirectOutputPrintRuntimeStatus(Stream &out) {
-  out.print("LED backend=FastLED/LCD_CLOCKLESS mode=");
+  out.print("LED backend=Eclair7/UART1/FastLED-RMT4 mode=");
   out.print(ledDirectOutputModeName());
-
   if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_CHANNEL) {
     out.print(" ch=");
     out.print(ledDirectValidationLane);
   }
-
   if (ledDirectRuntimeMode == LED_OUTPUT_VALIDATE_COLOR) {
     out.print(" color=");
     out.print(ledDirectOutputValidationColorName());
   }
-
   out.print(" allowed=");
   out.print(ledDirectOutputAllowed() ? 1 : 0);
+  out.print(" linkOnline=");
+  out.print(ledDirectOutputLinkOnline() ? 1 : 0);
   out.print(" firstShowAttempted=");
   out.print(ledDirectOutputFirstShowAttempted() ? 1 : 0);
+  out.print(" txSequence=");
+  out.print(eclairStateSequence);
+  out.print(" ackSequence=");
+  out.print(eclairLastStatus.acknowledgedSequence);
+  out.print(" frames=");
+  out.print(eclairLastStatus.renderedFrames);
+  out.print(" showUs=");
+  out.print(eclairLastStatus.lastShowMicros);
+  out.print(" remoteCrcErrors=");
+  out.print(eclairLastStatus.crcErrorCount);
+  out.print(" remoteTimeouts=");
+  out.print(eclairLastStatus.linkTimeoutCount);
   out.print(" savedDark=");
   out.print(ledSettingsAmbientIsCompletelyDark() ? 1 : 0);
-  out.print(" lanes=7 pixels=");
+  out.print(" zones=7 pixels=");
   out.print(LED_TOTAL_PIXEL_COUNT);
-  out.println(" z3=400 pins=1,2,39,40,41,42,43 dummy=0 order=GRB");
+  out.println(" tardi_uart_tx=40 tardi_uart_rx=41 eclair_led_pins=4,5,6,7,8,9,10 order=GRB");
 }

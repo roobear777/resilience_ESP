@@ -1,82 +1,51 @@
-# Direct LED Output
+# Eclair7 LED Output
 
-## Backend
+Tardi no longer renders or transmits physical LED pixels. It owns inputs, FIRE,
+web/settings, accepted trigger windows, overrides, and runtime output modes. A
+CRC-checked versioned snapshot of that complete LED state is sent every 20 ms
+over UART1 to Eclair. Eclair applies the snapshot, renders the shared production
+animation engine, and drives all seven physical zones.
 
-The ESP32-S3 drives seven WS2812 lanes through FastLED's
-`LCD_CLOCKLESS` channel API. The active FastLED revision is pinned to:
+The full-duplex wiring is:
 
 ```text
-fa79f3f757ca2dadd5db7773b2bed5c13b26b33a
+Tardi GPIO40 TX -> Eclair GPIO18 RX
+Tardi GPIO41 RX <- Eclair GPIO17 TX
+common ground
 ```
 
-The implementation explicitly enables only `Bus::LCD_CLOCKLESS` and assigns
-that bus to every channel. It does not use the older default `addLeds` routing.
-The active backend is `firmware/esp32_controller/led_direct_output.*`.
+Eclair returns acknowledgement, link state, frame count, last show time, CRC
+errors, timeout count, and first-show-attempted status. A snapshot is complete,
+so reconnect and reboot do not depend on missed incremental events. At 500 ms
+without a valid packet, Eclair sends black and stays black until communication
+recovers.
 
-## Lane Map
+## Physical lanes
 
-| Lane | Zone | GPIO | Pixels | Frame start |
+| Lane | Zone | Eclair GPIO | Pixels | Frame start |
 |---:|---|---:|---:|---:|
-| 1 | Z1 Mouth | 1 | 208 | 0 |
-| 2 | Z2 Shoulder | 2 | 325 | 208 |
-| 3 | Z3 Midbody | 39 | 400 | 533 |
-| 4 | Z4 Rear | 40 | 300 | 933 |
-| 5 | Z5 Front legs | 41 | 300 | 1233 |
-| 6 | Z6 Back legs | 42 | 300 | 1533 |
-| 7 | Z7 Digestive | 43 | 75 | 1833 |
+| 1 | Z1 Mouth | 4 | 208 | 0 |
+| 2 | Z2 Shoulder | 5 | 325 | 208 |
+| 3 | Z3 Midbody | 6 | 400 | 533 |
+| 4 | Z4 Rear | 7 | 300 | 933 |
+| 5 | Z5 Front legs | 8 | 300 | 1233 |
+| 6 | Z6 Back legs | 9 | 300 | 1533 |
+| 7 | Z7 Digestive | 10 | 75 | 1833 |
 
-The animation engine and physical FastLED frame both contain 1,908 contiguous
-`CRGB` pixels. Z3 is registered and animated as a full 400-pixel lane. The
-pinned driver therefore exercises its multi-chunk transmission path for Z3.
-Channels use GRB wire order.
+Total: 1,908 pixels, GRB order. The selected electrical path is direct Eclair
+GPIO to 5 V WS2812-class DIN, with common ground and no buffer, level shifter,
+or series data resistor.
 
-GPIO0 is required internally by the ESP32-S3 LCD/I80 peripheral for
-dummy/padding signals. It has no external connection and carries no animation
-lane.
+## FastLED toolchain
 
-## Electrical Path
+Eclair uses pinned FastLED revision
+`fa79f3f757ca2dadd5db7773b2bed5c13b26b33a` (3.10.4) with Arduino-ESP32 2.0.17.
+That IDF 4.x combination selects FastLED RMT4 and schedules seven controllers
+over the ESP32-S3's four TX channels. Arduino-ESP32 3.3.10 / IDF 5.x cannot
+compile that pinned revision's RMT4 implementation. Tardi remains on core
+3.3.10 and does not link FastLED.
 
-```text
-ESP32-S3 GPIO
--> SN74AHCT244 3.3 V-to-5 V logic buffer
--> 100 ohm series resistor
--> zone DIN
-```
-
-Use regulated 5 V for the buffer. ESP32, buffer, and LED-system grounds must be
-common. LED power injection, fusing, and heavy-current wiring remain separate.
-
-## Startup and Diagnostics
-
-Channel registration occurs during setup. The first frame is sent
-automatically in `ANIMATION` mode.
-
-Startup hardware check:
-
-- starts after Serial, settings, animation, and FastLED initialization;
-- runs before Wi-Fi/web initialization;
-- continuously renders and transmits moving animation for five seconds;
-- uses temporary 4–15% brightness and fixed 100% speed;
-- bypasses saved master, ambient/active, global-look, zone, and speed values;
-- never modifies or saves settings;
-- transmits normal saved rendering immediately when finished.
-
-First-show Serial output records:
-
-- each enqueued channel and selected driver;
-- internal, DMA, and PSRAM free/largest heap blocks before and after show;
-- whether all seven channels were routed to `LCD_CLOCKLESS`.
-
-`ROUTING CONFIRMED` confirms channel routing only. `firstShowAttempted=1`
-confirms that `FastLED.show()` was called. FastLED ESP32 error logging and full
-error handling are enabled during hardware validation so allocation/peripheral
-failures remain visible in Serial. Neither status proves electrical output;
-signal integrity, logic shifting, grounding, power, and light remain physical
-checks.
-
-## Retired Output Expander
-
-Pixelblaze Output Expander UART output is not part of the active firmware.
-GPIO39 belongs to Z3. The vendored PBDriverAdapter remains only as historical
-source and must not be re-enabled without a new hardware/pin review. No
-Output Expander simulator or compatibility API remains in the active backend.
+The five-second startup check remains Tardi-controlled: it sets a temporary
+startup-test flag in outgoing state without changing saved settings. The test
+can only light LEDs when Eclair is powered, wired, and receiving valid packets.
+Software compilation and status do not prove physical wiring, power, or light.

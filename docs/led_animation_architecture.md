@@ -9,11 +9,12 @@ accepted controller event
 -> HSV LedColor
 -> palette/behavior/brightness settings
 -> RGB CRGB frame
--> seven FastLED LCD_CLOCKLESS channels (GRB wire order)
+-> seven Eclair FastLED RMT4 channels (GRB wire order)
 ```
 
-The controller owns inputs, FIRE, and accepted trigger events. The LED engine
-owns animation state and pixel rendering only.
+Tardi owns inputs, FIRE, accepted trigger events, web/settings, and runtime
+output modes. It transmits state snapshots rather than pixels. Eclair owns the
+LED engine, animation state, pixel rendering, and all physical LED GPIOs.
 
 ## State Model
 

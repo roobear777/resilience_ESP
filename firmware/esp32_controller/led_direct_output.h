@@ -22,6 +22,7 @@ void ledDirectOutputRunStartupHardwareTest(Stream &out);
 void ledDirectOutputUpdate(uint32_t nowMs);
 bool ledDirectOutputAllowed();
 bool ledDirectOutputFirstShowAttempted();
+bool ledDirectOutputLinkOnline();
 const char *ledDirectOutputModeName();
 bool ledDirectOutputSetMode(LedOutputMode mode, Stream &out);
 bool ledDirectOutputSetLaneValidationMode(uint8_t laneId, Stream &out);

@@ -5,20 +5,27 @@ This is the authoritative behavior summary for the current live firmware.
 ## Controller
 
 ```text
-Board: ESP32-S3-DevKitC-1-N8R8
-Arduino core: 3.3.10
+Board: ESP32-S3-DevKitC-1
+Module: ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB octal PSRAM)
+Tardi Arduino core: 3.3.10
+Eclair Arduino core: 2.0.17 / IDF 4.4.7
+Flash size: 8 MB
+PSRAM: OPI
+Tardi partition: Default 8 MB
+USB mode: Hardware CDC and JTAG
 USB CDC On Boot: Enabled
 Serial: native USB, 115200 baud
 ```
 
-The ESP32 owns button debounce, accepted interactions, FIRE outputs and
-cutoffs, LED rendering, direct LED transmission, saved LED settings, Serial
-diagnostics, and the Wi-Fi controller.
+Tardi owns button debounce, accepted interactions, FIRE outputs and cutoffs,
+saved LED settings, Serial diagnostics, and the Wi-Fi controller. Eclair uses
+the same board/module, renders the shared LED engine, and owns physical LED
+transmission.
 
 ## Live Configuration
 
 ```cpp
-ENABLE_REAL_FASTLED_OUTPUT = true
+ENABLE_REAL_ECLAIR_OUTPUT = true
 FIRE_OUTPUTS_ENABLED = true
 USE_INTERNAL_PULLDOWNS = false
 ```
@@ -30,14 +37,15 @@ No command or setup button is required for normal operation.
 
 1. FIRE pins are driven HIGH/idle.
 2. Saved LED settings are loaded, or full defaults are used.
-3. Seven `LCD_CLOCKLESS` lanes are registered.
-4. A five-second moving LED hardware check runs at temporary 4–15% brightness
+3. UART1 starts on Tardi GPIO40 TX and GPIO41 RX.
+4. A five-second moving LED hardware check is requested from Eclair at temporary 4–15% brightness
    and fixed 100% speed, independent of saved brightness and speed settings.
 5. Normal rendering resumes immediately from the untouched saved settings.
 6. The Wi-Fi AP starts and normal loop operation begins.
 
-First-show diagnostics report channel routing and heap state. Physical LED
-behavior must still be confirmed on hardware.
+Tardi receives Eclair acknowledgement, link, frame, show-time, CRC-error,
+timeout, and first-show-attempted status. These software diagnostics do not
+prove physical LED behavior.
 
 ## Inputs and FIRE
 
@@ -66,11 +74,11 @@ button is required to re-arm.
 
 ## LEDs
 
-The direct output map is defined in `docs/direct_led_output.md`. The animation
-engine and FastLED frame contain 1,908 pixels. Z3 is a full 400-pixel logical
-and physical animation lane. Ambient rendering is continuous. Accepted button
-events activate zones for the saved animation duration, which defaults to 10
-seconds.
+The two-board output map is defined in `docs/direct_led_output.md`. Tardi sends
+complete state snapshots; Eclair renders and transmits 1,908 pixels on seven
+lanes. Z3 remains a full 400-pixel logical and physical lane. Ambient rendering
+is continuous. Accepted button events activate zones for the saved animation
+duration, which defaults to 10 seconds.
 
 LED output mode and validation modes are runtime-only. Reboot always returns
 to automatic animation. Saved appearance settings persist across power cycles

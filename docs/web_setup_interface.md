@@ -36,10 +36,11 @@ It has no FIRE, relay, or physical hardware-test controls.
 
 The connection card reports:
 
-- `ON` during normal direct output;
+- `ON` during normal Eclair output with a live return link;
+- `ON / ECLAIR OFFLINE` when no recent Eclair status packet is available;
 - `ON / SETTINGS DARK` when current ambient brightness multipliers produce an entirely dark sculpture;
 - whether the first `FastLED.show()` call has been attempted;
-- current mode and direct lane GPIOs.
+- current mode, Eclair link state, and Eclair lane GPIOs.
 
 The five-second moving LED hardware check finishes before the AP/web server
 starts, so it is reported over USB Serial rather than through the web page.
