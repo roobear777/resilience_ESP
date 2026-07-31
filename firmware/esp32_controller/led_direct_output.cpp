@@ -13,6 +13,7 @@
 
 constexpr uint8_t FASTLED_LANE_COUNT = 7;
 constexpr uint32_t LED_STARTUP_HARDWARE_TEST_MS = 5000;
+constexpr uint32_t LED_POWER_LIMIT_MA = 2000;
 constexpr bool ENABLE_REAL_FASTLED_OUTPUT = true;
 constexpr LedOutputMode DEFAULT_LED_OUTPUT_MODE = LED_OUTPUT_ANIMATION;
 
@@ -223,6 +224,7 @@ static void ledFastLedRegisterControllers() {
   }
 
   FastLED.setBrightness(255);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, LED_POWER_LIMIT_MA);
 }
 
 static void ledDirectOutputStart() {

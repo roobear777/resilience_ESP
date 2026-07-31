@@ -30,6 +30,11 @@ The animation engine and physical FastLED frame both contain 1,908 contiguous
 pinned driver therefore exercises its multi-chunk transmission path for Z3.
 Channels use GRB wire order.
 
+FastLED applies a 2,000 mA software power estimate cap at 5 V and scales frame
+brightness down when its estimate exceeds that limit. This is a rendering
+limit, not a measured-current cutoff or a substitute for correctly fused LED
+power distribution.
+
 GPIO0 is required internally by the ESP32-S3 LCD/I80 peripheral for
 dummy/padding signals. It has no external connection and carries no animation
 lane.
