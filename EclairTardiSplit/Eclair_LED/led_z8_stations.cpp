@@ -2,6 +2,7 @@
 
 #include "led_animations.h"
 #include "led_layout.h"
+#include "led_combo.h"
 
 const float Z8_GLOBAL_BRIGHTNESS = 1.0f;
 
@@ -14,6 +15,12 @@ const float Z8_ACTIVE_BASE_BRIGHTNESS = 0.10f;
 const float Z8_ACTIVE_CHASE_BRIGHTNESS = 0.95f;
 const float Z8_ACTIVE_CHASE_DURATION_MS = 700.0f;
 const float Z8_ACTIVE_TAIL_LENGTH = 5.0f;
+
+// Scaled by the active mood. ORGANIC lengthens tails and gradients,
+// CHARGED tightens them. See led_combo.h.
+static inline float z8ActiveTailLength() {
+  return Z8_ACTIVE_TAIL_LENGTH * ledComboLengthScale();
+}
 
 static float z8AmbientElapsedMs = 0.0f;
 static float z8ActiveElapsedMs = 0.0f;
@@ -42,12 +49,12 @@ static LedColor ledZ8StationsRenderAmbient(uint8_t station) {
 static LedColor ledZ8StationsRenderActive(uint8_t posInString) {
   float headPosition =
     (z8ActiveElapsedMs / Z8_ACTIVE_CHASE_DURATION_MS) *
-    (LED_Z8_PIXELS_PER_STATION_STRING + Z8_ACTIVE_TAIL_LENGTH);
+    (LED_Z8_PIXELS_PER_STATION_STRING + z8ActiveTailLength());
   float distanceBehind = headPosition - posInString;
   float brightness = Z8_ACTIVE_BASE_BRIGHTNESS;
 
-  if (distanceBehind >= 0.0f && distanceBehind <= Z8_ACTIVE_TAIL_LENGTH) {
-    float rampFraction = distanceBehind / Z8_ACTIVE_TAIL_LENGTH;
+  if (distanceBehind >= 0.0f && distanceBehind <= z8ActiveTailLength()) {
+    float rampFraction = distanceBehind / z8ActiveTailLength();
     brightness = Z8_ACTIVE_CHASE_BRIGHTNESS -
       ((Z8_ACTIVE_CHASE_BRIGHTNESS - Z8_ACTIVE_BASE_BRIGHTNESS) * rampFraction);
   }

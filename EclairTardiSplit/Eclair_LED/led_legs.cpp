@@ -2,6 +2,7 @@
 
 #include "led_animations.h"
 #include "led_layout.h"
+#include "led_combo.h"
 
 const float LEGS_GLOBAL_BRIGHTNESS = 1.0f;
 
@@ -19,6 +20,12 @@ const float LEGS_ACTIVE_ZAP_HUE = 0.12f;
 const float LEGS_ACTIVE_ZAP_SATURATION = 1.0f;
 const float LEGS_ACTIVE_ZAP_BRIGHTNESS = 0.90f;
 const float LEGS_ACTIVE_ZAP_LENGTH = 20.0f;
+
+// Scaled by the active mood. ORGANIC lengthens tails and gradients,
+// CHARGED tightens them. See led_combo.h.
+static inline float legsActiveZapLength() {
+  return LEGS_ACTIVE_ZAP_LENGTH * ledComboLengthScale();
+}
 const float LEGS_ACTIVE_ZAP_DURATION_MS = 800.0f;
 const float LEGS_ACTIVE_GROUP_DELAY_MS = 100.0f;
 const float LEGS_ACTIVE_PAUSE_MS = 300.0f;
@@ -79,8 +86,8 @@ static LedColor ledLegsRenderActive(uint8_t logicalLegIndex, uint8_t ledInLeg) {
   float legElapsedMs = legsActiveElapsedMs - legStartMs;
   float peakPosition =
     (legElapsedMs / LEGS_ACTIVE_ZAP_DURATION_MS) *
-    (LED_LEG_PIXELS_PER_LEG + LEGS_ACTIVE_ZAP_LENGTH) -
-    LEGS_ACTIVE_ZAP_LENGTH;
+    (LED_LEG_PIXELS_PER_LEG + legsActiveZapLength()) -
+    legsActiveZapLength();
   float distanceBehind = peakPosition - ledInLeg;
   float hue = LEGS_ACTIVE_BASE_HUE;
   float saturation = LEGS_ACTIVE_BASE_SATURATION;
@@ -88,8 +95,8 @@ static LedColor ledLegsRenderActive(uint8_t logicalLegIndex, uint8_t ledInLeg) {
 
   if (legElapsedMs >= 0.0f &&
       distanceBehind >= 0.0f &&
-      distanceBehind <= LEGS_ACTIVE_ZAP_LENGTH) {
-    float rampFraction = distanceBehind / LEGS_ACTIVE_ZAP_LENGTH;
+      distanceBehind <= legsActiveZapLength()) {
+    float rampFraction = distanceBehind / legsActiveZapLength();
     brightness = LEGS_ACTIVE_ZAP_BRIGHTNESS -
       ((LEGS_ACTIVE_ZAP_BRIGHTNESS - LEGS_ACTIVE_BASE_BRIGHTNESS) * rampFraction);
   }
@@ -128,7 +135,7 @@ void ledLegsUpdate(uint32_t deltaMs) {
   float activeCycleTotalMs =
     LEGS_ACTIVE_GROUP_DELAY_MS +
     LEGS_ACTIVE_ZAP_DURATION_MS +
-    (LEGS_ACTIVE_ZAP_LENGTH * (LEGS_ACTIVE_ZAP_DURATION_MS / LED_LEG_PIXELS_PER_LEG)) +
+    (legsActiveZapLength() * (LEGS_ACTIVE_ZAP_DURATION_MS / LED_LEG_PIXELS_PER_LEG)) +
     LEGS_ACTIVE_PAUSE_MS;
 
   while (legsActiveElapsedMs >= activeCycleTotalMs) {

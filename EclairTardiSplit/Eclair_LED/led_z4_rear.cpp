@@ -4,6 +4,7 @@
 
 #include "led_animations.h"
 #include "led_layout.h"
+#include "led_combo.h"
 
 const float Z4_GLOBAL_BRIGHTNESS = 1.0f;
 
@@ -18,6 +19,12 @@ const float Z4_ACTIVE_SATURATION = 1.0f;
 const float Z4_ACTIVE_AMBIENT_BRIGHTNESS = 0.02f;
 const float Z4_ACTIVE_PEAK_BRIGHTNESS = 1.0f;
 const float Z4_ACTIVE_GRADIENT_WIDTH = 8.0f;
+
+// Scaled by the active mood. ORGANIC lengthens tails and gradients,
+// CHARGED tightens them. See led_combo.h.
+static inline float z4ActiveGradientWidth() {
+  return Z4_ACTIVE_GRADIENT_WIDTH * ledComboLengthScale();
+}
 const float Z4_ACTIVE_FALL_SPEED_MS = 500.0f;
 const float Z4_ACTIVE_STRIP_DELAY_MS = 50.0f;
 const float Z4_ACTIVE_REPEAT_INTERVAL_MS = 1500.0f;
@@ -37,7 +44,7 @@ static void ledZ4RearUpdateDerivedActiveState() {
   z4ActiveMaxDistance = z4ActiveCenterA;
   z4ActiveFullFallMs =
     Z4_ACTIVE_FALL_SPEED_MS *
-    (LED_Z4_PIXELS_PER_STRIP + Z4_ACTIVE_GRADIENT_WIDTH) /
+    (LED_Z4_PIXELS_PER_STRIP + z4ActiveGradientWidth()) /
     LED_Z4_PIXELS_PER_STRIP;
 }
 
@@ -64,7 +71,7 @@ static float ledZ4RearCycleBrightness(float cycleElapsedMs, uint8_t stripIndex, 
 
   int peakLed = floorf((stripElapsedMs / Z4_ACTIVE_FALL_SPEED_MS) * LED_Z4_PIXELS_PER_STRIP);
 
-  if (peakLed > LED_Z4_PIXELS_PER_STRIP + Z4_ACTIVE_GRADIENT_WIDTH) {
+  if (peakLed > LED_Z4_PIXELS_PER_STRIP + z4ActiveGradientWidth()) {
     return -1.0f;
   }
 
@@ -74,8 +81,8 @@ static float ledZ4RearCycleBrightness(float cycleElapsedMs, uint8_t stripIndex, 
 
   int distanceBehind = peakLed - ledInStrip;
 
-  if (distanceBehind > 0 && distanceBehind <= Z4_ACTIVE_GRADIENT_WIDTH) {
-    float rampFraction = distanceBehind / Z4_ACTIVE_GRADIENT_WIDTH;
+  if (distanceBehind > 0 && distanceBehind <= z4ActiveGradientWidth()) {
+    float rampFraction = distanceBehind / z4ActiveGradientWidth();
     return Z4_ACTIVE_PEAK_BRIGHTNESS -
       ((Z4_ACTIVE_PEAK_BRIGHTNESS - Z4_ACTIVE_AMBIENT_BRIGHTNESS) * rampFraction);
   }

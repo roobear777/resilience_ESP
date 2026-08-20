@@ -59,6 +59,7 @@
 #include "led_engine.h"
 #include "led_layout.h"
 #include "led_settings.h"
+#include "led_combo.h"
 #include "led_state.h"
 #include "web_setup.h"
 
@@ -68,9 +69,26 @@
 
 const int NUM_BUTTONS = 8;
 
-// A raw reading must hold steady for this long before we believe it. Anything
-// shorter is treated as noise and ignored. 30 ms matches Tardi.
-const unsigned long DEBOUNCE_MS = 30;
+// =============================================================================
+// BUTTON FILTERING
+// =============================================================================
+//
+// ASYMMETRIC on purpose: hard to trigger, easy to release.
+//
+// A pin must read HIGH *continuously* for TRIGGER_HOLD_MS before we accept a
+// press. ANY low sample in that window resets the clock to zero. Releasing
+// only needs RELEASE_HOLD_MS, so the sculpture never feels sticky.
+//
+// This replaces a symmetric 30 ms debounce, which was far too permissive here:
+// an unwired input sitting next to eight lines switching at 800 kHz picks up
+// enough charge to sit high for well over 30 ms at a time, and every one of
+// those was being accepted as a press. That is why zones were going active on
+// their own.
+//
+// 150 ms is imperceptible on a physical button press but is a very long time
+// for coupled noise to hold a pin continuously high without a single dip.
+const unsigned long TRIGGER_HOLD_MS = 150;
+const unsigned long RELEASE_HOLD_MS = 50;
 
 // Status banner repeat. Printed on a timer rather than once at boot, so it is
 // on screen whenever you open the Serial Monitor rather than 90 seconds gone.
@@ -86,6 +104,10 @@ const unsigned long STATUS_BANNER_INTERVAL_MS = 5000;
 // simply parallels with the external 10k at the button end, which is harmless.
 //
 // NOTE: pulldown, never pullup. These buttons are active-HIGH.
+// The internal pulldown is only ~45k. That is enough for a short bench lead
+// and NOT enough for long wiring running past the LED harness - which is why
+// the real fix is the external 10k at the button end plus 1k series + 100nF at
+// each input (see docs/two_board_split.md). This is mitigation, not a cure.
 const bool USE_INTERNAL_PULLDOWNS = true;
 
 // Marks a button that has no LED zone of its own.
@@ -114,10 +136,12 @@ struct ZoneButton {
   uint8_t zoneIndex;             // LED zone it triggers, or NO_ZONE
   const char *label;
 
-  // --- debounce ---
+  // --- filtering ---
   bool stableReading;            // the level we currently believe
-  bool rawReading;               // most recent raw sample
-  unsigned long rawChangedAt;    // when rawReading last changed
+  unsigned long highSinceMs;     // when the pin last STARTED reading high (0 = not high)
+  unsigned long lowSinceMs;      // when the pin last STARTED reading low
+  unsigned long highSamples;     // diagnostics: samples seen high
+  unsigned long totalSamples;    // diagnostics: samples taken
 
   // --- diagnostics ---
   unsigned long triggerCount;    // accepted rising edges since boot
@@ -186,8 +210,10 @@ void setupButtons() {
     pinMode(btn.pin, USE_INTERNAL_PULLDOWNS ? INPUT_PULLDOWN : INPUT);
 
     btn.stableReading = false;
-    btn.rawReading    = false;
-    btn.rawChangedAt  = 0;
+    btn.highSinceMs   = 0;
+    btn.lowSinceMs    = 0;
+    btn.highSamples   = 0;
+    btn.totalSamples  = 0;
     btn.triggerCount  = 0;
     btn.glitchCount   = 0;
   }
@@ -219,58 +245,86 @@ void loop() {
 // BUTTON HANDLING (debounced)
 // =============================================================================
 //
-// A level has to hold steady for DEBOUNCE_MS before we act on it. Any change
-// shorter than that is counted as a glitch and thrown away — the glitch
-// counter is reported in the status banner, so if zones self-trigger you can
-// see immediately whether it is electrical noise (glitches climbing) or
-// something else entirely (they aren't).
+// A pin must read HIGH continuously for TRIGGER_HOLD_MS to count as a press.
+// Any low sample resets the run and increments the glitch counter, which is
+// reported in the status banner — if zones self-trigger, a climbing glitch
+// count says it is electrical noise on the wiring, not a software problem.
+// Use the `buttons` serial command to see which pins are the culprits.
 
 void checkButtonForZone(int b, unsigned long now) {
   ZoneButton &btn = buttons[b];
   bool raw = (digitalRead(btn.pin) == HIGH);
 
-  // The raw level moved. Restart the settling clock and wait it out.
-  if (raw != btn.rawReading) {
-    // If it moves again before settling, that previous move was noise.
-    if (btn.rawReading != btn.stableReading) {
-      btn.glitchCount++;
+  btn.totalSamples++;
+  if (raw) btn.highSamples++;
+
+  if (raw) {
+    btn.lowSinceMs = 0;
+    if (btn.highSinceMs == 0) btn.highSinceMs = now;   // start of a high run
+  } else {
+    // ANY low sample kills the run. Noise almost always dips; a finger does not.
+    if (btn.highSinceMs != 0 && !btn.stableReading) btn.glitchCount++;
+    btn.highSinceMs = 0;
+    if (btn.lowSinceMs == 0) btn.lowSinceMs = now;
+  }
+
+  // --- accept a press ---
+  if (!btn.stableReading) {
+    if (btn.highSinceMs != 0 && (now - btn.highSinceMs) >= TRIGGER_HOLD_MS) {
+      btn.stableReading = true;
+      btn.triggerCount++;
+
+      // Button 1 is claimed by the full-body combo while B8 is also held, so
+      // it does not additionally fire its own zone in that case.
+      if (b == 0 && buttons[7].stableReading) return;
+
+      if (btn.zoneIndex != NO_ZONE) {
+        // ledTriggerZone RESTARTS the window rather than being ignored while
+        // the zone is already active, so a press always gets a response.
+        ledTriggerZone(btn.zoneIndex, now);
+        Serial.printf("TRIGGER: %s\n", btn.label);
+      }
     }
-    btn.rawReading   = raw;
-    btn.rawChangedAt = now;
     return;
   }
 
-  // Raw is steady — but has it been steady long enough to believe?
-  if ((now - btn.rawChangedAt) < DEBOUNCE_MS) {
-    return;
+  // --- accept a release ---
+  if (btn.lowSinceMs != 0 && (now - btn.lowSinceMs) >= RELEASE_HOLD_MS) {
+    btn.stableReading = false;
+  }
+}
+
+// Sample every input hard for a second and report what fraction of samples
+// read high. This is the fastest way to tell a wiring problem from a code
+// problem: with nothing pressed, every pin should be at 0%.
+//
+//   0%        clean
+//   1-20%     noise pickup - the filter is holding, but fit the RC network
+//   20-90%    badly floating - phantom presses will get through
+//   100%      stuck high, shorted, or genuinely pressed
+void reportButtonNoise() {
+  const unsigned long SAMPLE_MS = 1000;
+  unsigned long high[NUM_BUTTONS] = { 0 };
+  unsigned long total = 0;
+  unsigned long start = millis();
+
+  Serial.println("sampling inputs for 1s - do not press anything...");
+  while (millis() - start < SAMPLE_MS) {
+    for (int b = 0; b < NUM_BUTTONS; b++) {
+      if (digitalRead(buttons[b].pin) == HIGH) high[b]++;
+    }
+    total++;
   }
 
-  // Settled. Does it differ from the level we currently believe?
-  if (raw == btn.stableReading) {
-    return;
-  }
-
-  bool risingEdge = (raw && !btn.stableReading);
-  btn.stableReading = raw;
-
-  if (!risingEdge) {
-    return;
-  }
-
-  btn.triggerCount++;
-
-  // Button 1 is claimed by the full-body combo while B8 is also held, so it
-  // does not additionally fire its own zone in that case.
-  if (b == 0 && buttons[7].stableReading) {
-    return;
-  }
-
-  if (btn.zoneIndex != NO_ZONE) {
-    // ledTriggerZone RESTARTS the window rather than being ignored while the
-    // zone is already active — a press always gets a response, matching the
-    // retrigger behaviour in picoV3_esp32.
-    ledTriggerZone(btn.zoneIndex, now);
-    Serial.printf("TRIGGER: %s\n", btn.label);
+  Serial.printf("%lu samples\n", total);
+  Serial.println("btn  gpio  high%  verdict");
+  for (int b = 0; b < NUM_BUTTONS; b++) {
+    float pct = total ? (high[b] * 100.0f / total) : 0.0f;
+    const char *verdict = pct < 1.0f    ? "clean"
+                        : pct < 20.0f   ? "noise - fit 1k + 100nF"
+                        : pct < 90.0f   ? "FLOATING - phantom presses"
+                                        : "stuck high / pressed";
+    Serial.printf("  %d  %4d  %5.1f  %s\n", b + 1, buttons[b].pin, pct, verdict);
   }
 }
 
@@ -290,16 +344,71 @@ bool isFullBodyRequested() {
   return isHeld(0) && isHeld(7);      // B1 + B8, same combo as Tardi's head poof
 }
 
-bool isGreenOverrideRequested() {
-  return isHeld(1) && isHeld(5);      // B2 + B6
+uint8_t countHeld() {
+  uint8_t n = 0;
+  for (int b = 0; b < NUM_BUTTONS; b++) {
+    if (buttons[b].stableReading) n++;
+  }
+  return n;
+}
+
+// Bit N set = zone ZN+1's button is held. Only these zones take the combo
+// colour; every other zone carries on in its own colour undisturbed.
+//
+// Button 8 is excluded: it has no zone of its own, it toggles the mood. It
+// still counts toward the total, so it still influences WHICH colour.
+uint8_t heldZoneMask() {
+  uint8_t mask = 0;
+  for (int b = 0; b < NUM_BUTTONS; b++) {
+    if (buttons[b].stableReading && buttons[b].zoneIndex != NO_ZONE) {
+      mask |= (uint8_t)(1u << buttons[b].zoneIndex);
+    }
+  }
+  return mask;
+}
+
+// Button 8 toggles the mood. It has no zone (7 body zones, 8 buttons) and no
+// station string (only 7 exist), so instead it changes what KIND of creature
+// this is — palette, animation speed, and how long the tails and gradients are.
+//
+// Two moods, not three, so it is a toggle rather than a cycle: every press
+// visibly flips something and you always know which state you are in.
+//
+// Only fires on a CLEAN press with nothing else held. B1+B8 is the head poof /
+// full-body combo, so an unconditional toggle would scramble the palette every
+// time the payoff runs.
+void updateMoodToggle() {
+  static bool lastB8 = false;
+  bool b8 = isHeld(7);
+
+  bool othersHeld = false;
+  for (int b = 0; b < NUM_BUTTONS - 1; b++) {
+    if (buttons[b].stableReading) othersHeld = true;
+  }
+
+  if (b8 && !lastB8 && !othersHeld) {
+    ledComboToggleMood();
+    Serial.printf("MOOD: %s\n", ledComboMoodName());
+  }
+  lastB8 = b8;
 }
 
 void updateCombos(unsigned long now) {
   static bool fullBodyLatched = false;
 
-  ledEngineSetAllGreenOverride(isGreenOverrideRequested());
+  updateMoodToggle();
 
-  if (isFullBodyRequested()) {
+  // MASK picks which zones get the colour; the NUMBER OF LIT ZONES picks which
+  // colour. Press buttons 2 and 3 and only Z2 and Z3 change - the rest of the
+  // sculpture carries on as normal.
+  //
+  // The full-body payoff is the one case that IS sculpture-wide. Build the
+  // mask first and call ONCE: calling twice in a frame advanced the blend and
+  // hue easing twice, so the payoff eased at double speed.
+  bool fullBody = isFullBodyRequested();
+  ledComboSetButtonsHeld(countHeld(), fullBody ? 0xFF : heldZoneMask());
+
+  if (fullBody) {
     if (!fullBodyLatched) {
       fullBodyLatched = true;
       ledActivateAllZones(now);
@@ -354,14 +463,16 @@ void printStatusBanner(unsigned long now) {
                 ledEngineIsZoneActive(LED_ZONE_Z8_STATIONS, now) ? "ACTIVE" : "ambient");
 
   Serial.println();
-  Serial.printf("combos : full-body(B1+B8) %s   green(B2+B6) %s\n",
-                isFullBodyRequested() ? "YES" : "no",
-                isGreenOverrideRequested() ? "YES" : "no");
-  Serial.printf("buttons: debounce %lu ms, internal pulldown %s, %lu glitches rejected\n",
-                DEBOUNCE_MS, USE_INTERNAL_PULLDOWNS ? "ON" : "off", totalGlitches);
+  ledComboPrintStatus(Serial);
+  Serial.printf("combos : full-body(B1+B8) %s\n",
+                isFullBodyRequested() ? "YES" : "no");
+  Serial.printf("buttons: trigger hold %lu ms, release %lu ms, pulldown %s, %lu glitches\n",
+                TRIGGER_HOLD_MS, RELEASE_HOLD_MS,
+                USE_INTERNAL_PULLDOWNS ? "ON" : "off", totalGlitches);
   if (totalGlitches > 0) {
     Serial.println("         glitches climbing = electrical noise on the button wiring.");
-    Serial.println("         Fit 1k series + 100nF to GND at each input.");
+    Serial.println("         Run `buttons` to see which pins. Fix is 1k series +");
+    Serial.println("         100nF to GND at each input, plus the external 10k.");
   }
   Serial.printf("look   : brightness %u  speed %u%%  palette %s  behaviour %s\n",
                 settings.masterBrightness, settings.speedPercent,
@@ -388,6 +499,9 @@ void printCommandHelp() {
   Serial.println("  led red|green|blue   solid colour (checks byte order)");
   Serial.println("  trigger 1..8    fire a zone from the keyboard");
   Serial.println("  trigger all     full-body payoff");
+  Serial.println("  mood            toggle ORGANIC / CHARGED");
+  Serial.println("  buttons         1s noise check on all 8 inputs");
+  Serial.println("  colours         the colour code table");
   Serial.println("  help");
 }
 
@@ -417,7 +531,20 @@ void handleSerialCommand(String cmd) {
 
   if (cmd == "driver") { ledDirectOutputPrintDriverTable(Serial); return; }
 
+  if (cmd == "mood") {
+    ledComboToggleMood();
+    Serial.printf("mood: %s\n", ledComboMoodName());
+    return;
+  }
+
   if (cmd == "heap") { ledDirectOutputPrintHeap("now", Serial); return; }
+
+  if (cmd == "buttons") { reportButtonNoise(); return; }
+
+  if (cmd == "colours" || cmd == "colors") {
+    ledComboPrintColourCode(Serial);
+    return;
+  }
 
   if (cmd == "led on")    { ledDirectOutputSetMode(LED_OUTPUT_ANIMATION, Serial); return; }
   if (cmd == "led off")   { ledDirectOutputSetMode(LED_OUTPUT_OFF, Serial); return; }

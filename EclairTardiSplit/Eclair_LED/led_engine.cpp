@@ -1,4 +1,5 @@
 #include "led_engine.h"
+#include "led_combo.h"
 
 #include "led_config.h"
 #include "led_legs.h"
@@ -15,7 +16,6 @@
 #include <math.h>
 
 static bool ledPressureTestEnabled = false;
-static bool ledAllGreenOverride = false;
 static uint32_t ledLastFrameMs = 0;
 static uint32_t ledFrameDeltaMs = 0;
 
@@ -65,8 +65,21 @@ static uint32_t ledScaledNowMs(
     + 50u
   ) / 100u;
 
+  // Mood speed. Only the ANIMATION look is affected — ambient keeps its own
+  // pace, so the sculpture at rest is unchanged and the difference only shows
+  // when someone is actually pressing something.
+  //
+  // INTEGER, not float. An earlier version multiplied by a float here, which
+  // promoted the whole expression to single precision. Float has a 24-bit
+  // mantissa, so once nowMs * speedPercent passes 16,777,216 — under three
+  // minutes of uptime at 100% — the time base starts quantising, and it did so
+  // for AMBIENT too, because even a 1.0f multiplier forces the float path.
+  uint16_t moodPercent = (lookKind == LED_LOOK_ANIMATION)
+    ? ledComboSpeedPercent()
+    : 100u;
+
   return static_cast<uint32_t>(
-    (static_cast<uint64_t>(nowMs) * speedPercent) / 100u
+    (static_cast<uint64_t>(nowMs) * speedPercent * moodPercent) / 10000u
   );
 }
 
@@ -153,13 +166,19 @@ static LedColor ledApplyBehaviorMode(
   return tuned;
 }
 
+// comboZone: which zone this pixel counts as for the button-combo colour.
+// Defaults to zoneIndex. Z8 passes its STATION's zone instead, so a station
+// string changes colour along with the body zone its own button drives.
 static LedColor ledApplySettingsToColor(
   const LedColor &color,
   uint16_t logicalPixelIndex,
   uint32_t nowMs,
   uint8_t zoneIndex,
-  bool active
+  bool active,
+  uint8_t comboZone = 0xFF
 ) {
+  if (comboZone == 0xFF) comboZone = zoneIndex;
+
   LedLookKind lookKind = active ? LED_LOOK_ANIMATION : LED_LOOK_AMBIENT;
   const LedLookSettings &globalLook = ledSettingsGlobalLook(lookKind);
   const LedLookSettings &zoneLook = ledSettingsZoneLook(lookKind, zoneIndex);
@@ -184,10 +203,20 @@ static LedColor ledApplySettingsToColor(
     * ledByteScale(zoneLook.brightness)
   );
   tuned = ledApplyBehaviorMode(tuned, logicalPixelIndex, nowMs, globalLook, zoneLook);
+
+  // Combo stage, LAST. Applied after the zone has rendered and after settings,
+  // so the animation keeps running underneath and only hue/saturation move.
+  //
+  // This is the structural difference from the old all-green override, which
+  // returned before any zone code ran. That froze every animation and made the
+  // sculpture look broken rather than transformed.
+  tuned = ledComboApply(tuned, active, comboZone);
+
   return tuned;
 }
 
 void ledEngineBegin() {
+  ledComboBegin();
   ledPressureTestEnabled = false;
   ledLastFrameMs = 0;
   ledFrameDeltaMs = 0;
@@ -227,10 +256,6 @@ void ledEngineSetPressureTestEnabled(bool enabled) {
   ledPressureTestEnabled = enabled;
 }
 
-void ledEngineSetAllGreenOverride(bool enabled) {
-  ledAllGreenOverride = enabled;
-}
-
 bool ledEngineIsZoneActive(uint8_t zoneIndex, uint32_t nowMs) {
   if (ledPressureTestEnabled) {
     return true;
@@ -244,10 +269,6 @@ LedColor ledEngineRenderPixel(uint16_t logicalPixelIndex, uint32_t nowMs) {
 
   if (!ledLayoutZoneForPixel(logicalPixelIndex, zoneIndex)) {
     return LED_COLOR_BLACK;
-  }
-
-  if (ledAllGreenOverride) {
-    return { 0.333f, 1.0f, 1.0f };
   }
 
   if (zoneIndex == LED_ZONE_Z1_MOUTH) {
@@ -312,7 +333,10 @@ LedColor ledEngineRenderPixel(uint16_t logicalPixelIndex, uint32_t nowMs) {
     bool stationActive = ledEngineIsZoneActive(station, nowMs);
     uint32_t renderNowMs = ledScaledNowMs(nowMs, stationActive ? LED_LOOK_ANIMATION : LED_LOOK_AMBIENT, zoneIndex);
     LedColor color = ledZ8StationsRender(localIndex, stationActive, renderNowMs);
-    return ledApplySettingsToColor(color, logicalPixelIndex, renderNowMs, zoneIndex, stationActive);
+    // Combo colour follows the STATION's zone, not Z8, so station 3's string
+    // turns the same colour as Z3 when button 3 is part of a combo.
+    return ledApplySettingsToColor(color, logicalPixelIndex, renderNowMs,
+                                   zoneIndex, stationActive, station);
   }
 
   return LED_COLOR_BLACK;

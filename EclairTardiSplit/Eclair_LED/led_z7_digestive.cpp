@@ -1,6 +1,7 @@
 #include "led_z7_digestive.h"
 
 #include "led_layout.h"
+#include "led_combo.h"
 
 const float Z7_GLOBAL_BRIGHTNESS = 1.0f;
 
@@ -16,6 +17,12 @@ const float Z7_AMBIENT_PAUSE_MS = 500.0f;
 const float Z7_ACTIVE_BASELINE_BRIGHTNESS = 0.35f;
 const float Z7_ACTIVE_PEAK_BRIGHTNESS = 1.0f;
 const float Z7_ACTIVE_GRADIENT_LENGTH = 20.0f;
+
+// Scaled by the active mood. ORGANIC lengthens tails and gradients,
+// CHARGED tightens them. See led_combo.h.
+static inline float z7ActiveGradientLength() {
+  return Z7_ACTIVE_GRADIENT_LENGTH * ledComboLengthScale();
+}
 const float Z7_ACTIVE_FALL_DURATION_MS = 700.0f;
 const float Z7_ACTIVE_PAUSE_MS = 100.0f;
 
@@ -98,7 +105,7 @@ LedColor ledZ7DigestiveRender(uint16_t localIndex, bool active, uint32_t nowMs) 
       localIndex,
       z7ActiveElapsedMs,
       Z7_ACTIVE_FALL_DURATION_MS,
-      Z7_ACTIVE_GRADIENT_LENGTH,
+      z7ActiveGradientLength(),
       Z7_ACTIVE_BASELINE_BRIGHTNESS,
       Z7_ACTIVE_PEAK_BRIGHTNESS
     ) :

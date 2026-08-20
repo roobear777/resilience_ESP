@@ -201,7 +201,7 @@ One wire per button feeding two boards. ESP32 inputs are high-impedance CMOS
   other isn't. ESP32 pins have protection diodes to VDD, so driving a pin on an
   unpowered chip can partially power it through them.
 - **100nF at each input** — 1k x 100nF = 100 us. Kills RF pickup from the
-  solenoid harness; invisible to a real press and to the 30 ms debounce.
+  solenoid harness; invisible to a real press and to the software filter.
 - **Common ground between the boxes** on a real conductor.
 - **Twisted pair** per button, signal with its own ground.
 
@@ -215,14 +215,259 @@ fire.
 
 | Input | Tardi | Eclair |
 |---|---|---|
-| Button 1-7 | FIRE1-7 pulse while held | triggers Z1-Z7 |
-| Button 8 | FIRE8 | no zone of its own |
-| **B1 + B8** | FIRE9 head poof, 10 s cutoff | full-body: all zones |
-| **B2 + B6** | — | everything green |
-| All 8 | one coordinated 500 ms pulse | — |
+| Button 1-7 | FIRE1-7, 100 ms, repeating every 1 s while held | triggers Z1-Z7 |
+| Button 8 | FIRE8 | no zone — toggles the **mood** |
+| **B1 + B8** | nothing special | full-body: all zones |
+| **2+ held** | — | the held zones snap to one shared colour |
+| **All 8** | the big poof, then a 30 s lockout on every poofer | full body |
 
 A press **restarts** a zone's window rather than being ignored while it is
 already active, so a press always gets a response.
+
+Buttons are filtered **asymmetrically** on Eclair: a pin must read HIGH
+*continuously* for `TRIGGER_HOLD_MS` (150 ms) to count as a press, and any low
+sample resets the run. Release needs only 50 ms, so nothing feels sticky. The
+earlier symmetric 30 ms debounce was far too permissive — an unwired input next
+to eight lines switching at 800 kHz holds high for well over 30 ms at a time,
+and every one of those was accepted. That is why zones went active on their
+own. **The real fix is still the RC network above**; this is mitigation. Run
+`buttons` to see which pins are dirty.
+
+---
+
+## Combo lighting (Eclair)
+
+Two independent axes, driven entirely by the buttons that already exist:
+
+| Axis | Control | Effect |
+|---|---|---|
+| **Mood** | Button 8 toggles | what *kind* of creature it is |
+| **Convergence** | how many buttons are held | how *unified* it is |
+
+Nobody has to be told the rules. With 8 buttons there are 28 possible pairs;
+mapping those to specific effects would mean most triggers are accidental and
+nobody connects cause to effect. Driving off *how many* rather than *which*
+means the sculpture visibly rewards more people joining in, and accidental
+pairs — inevitable with seven strangers — still look intentional.
+
+### Colour code — count picks the colour, the held zones get it
+
+**Which zones change:** only the ones whose buttons are held. Press 2 and 3 and
+Z2 and Z3 turn green *together*; every other zone carries on undisturbed. You
+see your own zone respond, and you see it match the other person's.
+
+**Which colour:** how many zones are lit — *not* how many buttons are down.
+
+| Lit zones | ORGANIC | CHARGED |
+|---|---|---|
+| 1 | zone's own colour | zone's own colour |
+| 2 | red | green |
+| 3 | green | red |
+| 4 | magenta | cyan |
+| 5 | yellow | magenta |
+| 6 | cyan | yellow |
+| 7 | orange | blue |
+| 8 (full body) | blue | orange |
+
+Full snap, not a blend — halfway convergence isn't readable at distance, and
+recolouring the *whole* sculpture drowned out the connection between what you
+pressed and what changed.
+
+> **Why these colours, in this order.** The first table walked green → cyan →
+> blue → violet and gave 3 and 4 the same hue, 5 and 6 the same, 7 and 8 the
+> same. Two failures at once: a fourth person could join and nothing visibly
+> changed, and the steps that *did* change were 0.07–0.08 apart along one side
+> of the wheel, where hue discrimination is worst. Everything past three
+> buttons looked like the same blue. **That is why four onward was confusing.**
+>
+> The table is now the result of a brute-force search over orderings of seven
+> LED-legible hues:
+>
+> | | old | new |
+> |---|---:|---:|
+> | min gap between adjacent counts | 0.07 | **0.30** |
+> | min gap between the two moods | collisions | **0.30** |
+>
+> Deliberately *not* a temperature ramp — HSV compresses red→yellow into
+> 0.00–0.15, so any ramp has tiny gaps at the warm end. Legibility at thirty
+> feet in the dark beats narrative.
+
+> **Colour follows lit zones, not button count.** Button 8 has no zone. Driving
+> the colour off the raw button count meant holding B8 alongside three zone
+> buttons showed the *four*-zone colour while only three zones were lit — and
+> releasing B8 changed the colour without changing anything you could see.
+
+> **The colour eases between steps.** A group arriving one at a time used to
+> make the hue jump on every press — four different colours in under a second,
+> which is most of what made a crowd feel chaotic. It now slides round the
+> wheel, so a growing group reads as one continuous change.
+
+The **B1+B8 full-body payoff** is the one deliberate exception: every zone
+active and every zone taking the colour.
+
+### Mood — Button 8
+
+B8 has no body zone (7 zones, 8 buttons) and no station string (only 7 exist).
+So instead of giving it a pattern, it toggles the whole sculpture:
+
+| | **ORGANIC** | **CHARGED** |
+|---|---|---|
+| Hue shift (all zones, incl. ambient) | none | +0.50 around the wheel |
+| Signature flash colour | cyan | red |
+| Combo colour set | cool | warm |
+| Length | **×1.00** | ×0.60 — short, tight |
+| Speed | **100%** | 160% |
+| Reads as | the sculpture as built | agitated, electric, awake |
+
+**Two moods, not three, so it's a toggle rather than a cycle** — every press
+visibly flips something and you always know which state you're in.
+
+Toggling also fires a **700 ms full-sculpture flash** in the new mood's
+signature colour, so a B8 press is unmistakable rather than something you have
+to go looking for. Between that, the ambient hue shift, and the mood swapping
+the entire combo colour set, B8 has three visible consequences.
+
+> **ORGANIC is an exact no-op, on purpose.** At boot, and any time nobody is
+> pressing anything, `ledComboApply()` returns the colour untouched via a fast
+> path — not "shifted by zero", untouched. The resting sculpture is identical
+> to the pre-combo build.
+>
+> An earlier version had ORGANIC at `lengthScale 1.35`, reasoning that it
+> should be the "long, flowing" mood. That was wrong. Z8's chase tail is 5 px
+> on a **14 px** station string; ×1.35 stretched it to 6.75 — nearly half the
+> run — turning a crisp chase into a smear, by default, before anyone had
+> touched a button. The default look is not a design opportunity.
+
+### Why the mood changes both speed *and* length
+
+The zones are shaped two different ways. Either knob alone would leave half the
+sculpture unmoved:
+
+**Time-shaped** — character comes from timing, responds to **speed**
+: Z1 mouth (peristaltic), Z2 shoulder (peristaltic), Z3 midbody (strobe)
+
+**Space-shaped** — character comes from how many pixels are lit at once,
+responds to **length**
+: Z4 rear (`gradientWidth`), Z5/Z6 legs (`zapLength`), Z7 digestive
+(`gradientLength`), Z8 stations (`tailLength`)
+
+### The structural change
+
+The old B2+B6 green override returned **before** any zone code ran:
+
+```cpp
+if (ledAllGreenOverride) {
+  return { 0.333f, 1.0f, 1.0f };   // solid green, animations frozen
+}
+```
+
+That stopped the sculpture breathing and made it look broken rather than
+transformed. Replaced with a **post-process stage** at the end of
+`ledApplySettingsToColor`, after the zone has rendered:
+
+```cpp
+tuned = ledComboApply(tuned, active, comboZone);
+```
+
+The animation keeps running underneath. Only **hue and saturation** move.
+
+**Brightness is never touched.** Ambient draw already sits near the supply
+ceiling. "Everything gets brighter" isn't available to us — and concentrating
+and unifying colour reads as more dramatic than adding light anyway.
+`lengthScale` is the one knob that costs current, since more consecutive lit
+pixels is literally more amps. That is why **CHARGED is the short mood**, so
+the two roughly balance rather than one being a step up in draw.
+
+**Shortest-arc hue interpolation.** Hue is a circle. Interpolating 0.9 → 0.1 by
+simple lerp travels backwards through green and cyan — 0.8 of the wheel instead
+of 0.2. `ledComboLerpHue()` wraps the short way.
+
+**Saturation goes to full.** Z1 renders as white (saturation 0), and hue is
+meaningless on a white pixel — without this the mouth would sit unchanged while
+the zones beside it changed colour. Driving to *full* rather than partway also
+matters for legibility: ambient zones are dim (0.03–0.25), and at that
+brightness a pastel colour is barely a colour. Saturation is the only lever
+available, since brightness is off limits.
+
+### Tuning
+
+Everything lives in one table at the top of `led_combo.cpp`:
+
+```cpp
+static const LedMoodConfig LED_MOODS[LED_MOOD_COUNT] = {
+  //  name        hueShift  signature  lengthScale  speedPercent
+  { "ORGANIC",      0.00f,     0.50f,      1.00f,        100 },  // keep at identity
+  { "CHARGED",      0.50f,     0.02f,      0.60f,        160 },
+};
+```
+
+`speedPercent` is an **integer**, not a float. The engine folds it into a
+`uint64_t` time calculation, and a float there promotes the whole expression to
+single precision — 24-bit mantissa — which quantises the time base once
+`nowMs * speedPercent` passes 16.7 million, under three minutes of uptime. That
+affected ambient too, since even a `1.0f` multiplier forces the float path.
+
+And the colour code, indexed by how many zones are lit:
+
+```cpp
+static const float COMBO_HUE[LED_MOOD_COUNT][9] = {
+  //          0      1     2      3      4        5       6      7       8
+  /* ORG */ {0.00f, 0.00f, 0.00f, 0.33f, 0.85f,  0.15f,  0.50f, 0.08f,  0.67f},
+  //                       red    green  magenta yellow  cyan   orange  blue
+  /* CHG */ {0.00f, 0.00f, 0.33f, 0.00f, 0.50f,  0.85f,  0.15f, 0.67f,  0.08f},
+  //                       green  red    cyan    magenta yellow blue    orange
+};
+```
+
+Button filtering lives in `Eclair_LED.ino`:
+
+```cpp
+const unsigned long TRIGGER_HOLD_MS = 150;   // continuous HIGH required
+const unsigned long RELEASE_HOLD_MS = 50;
+```
+
+### Behaviour notes
+
+**B8 also fires FIRE8.** Every mood change is punctuated by a poof — you can't
+change the look quietly. That may be good or annoying; it's a Tardi-side
+question, not an Eclair one.
+
+**Mood only toggles on a clean B8 press with nothing else held.** B1+B8 is the
+full-body combo, so an unconditional toggle would scramble the palette every
+time the payoff runs.
+
+**Mood speed and length affect active animations only.** The mood's *hue shift*
+does apply to ambient, which is what makes B8 visible with nobody pressing.
+
+**Convergence eases rather than snapping.** Releasing a button looks like the
+sculpture relaxing instead of a light switch. Costs nothing.
+
+### Verification
+
+`led_combo.cpp` is covered by a host-side test that links against the real
+file and checks:
+
+1. at rest in ORGANIC every pixel comes back bit-identical
+2. every lit-zone count gives a distinct hue, ≥0.25 from its neighbours
+3. Button 8 does not shift the colour
+4. only masked zones are recoloured; unheld zones are untouched
+5. hue easing converges and never leaves 0..1
+6. full-body mask reaches 8 lit zones and full blend
+7. brightness is never modified
+8. a mood toggle re-picks the colour immediately
+
+All pass. The mood and colour *values* are chosen to be legible and want tuning
+against the real sculpture at night, which is the only place the numbers mean
+anything.
+
+### Files
+
+| File | Role |
+|---|---|
+| `led_combo.h` / `.cpp` | mood table, convergence ladder, hue maths |
+| `led_engine.cpp` | green override removed; combo stage added; speed scale |
+| `led_z4_rear.cpp`, `led_legs.cpp`, `led_z7_digestive.cpp`, `led_z8_stations.cpp` | active length constants scaled by mood |
+| `Eclair_LED.ino` | asymmetric button filter, held-zone mask, B8 mood toggle, `buttons` noise check |
 
 ---
 
@@ -250,14 +495,31 @@ UART0 is free.
 Both boards print a repeating status banner every 5 s, so it is on screen
 whenever you open the monitor rather than 90 seconds gone.
 
-**Eclair:** `status`, `driver`, `heap`, `led on|off|solid`, `led ch 0..7`,
-`led red|green|blue`, `trigger 1..8`, `trigger all`
+**Eclair:** `status`, `driver`, `heap`, `buttons`, `colours`, `mood`,
+`led on|off|solid`, `led ch 0..7`, `led red|green|blue`, `trigger 1..8`,
+`trigger all`
 
 `led ch N` lights one lane at a time; `led red|green|blue` checks byte order.
 Both are far better for diagnosing wiring than watching an animation, which is
 designed to look irregular and hides faults.
 
-**Tardi:** `status`, `arm`, `counts`
+`buttons` samples every input hard for a second and reports what fraction read
+high. With nothing pressed, every pin should be 0%:
+
+```
+btn  gpio  high%  verdict
+  1     4    0.0  clean
+  5    15   34.2  FLOATING - phantom presses
+```
+
+The status banner reports:
+
+```
+mood   : ORGANIC  hueShift 0.00  length x1.00  speed 100%
+combo  : 2 held, 2 lit  hue 0.00->0.00  blend 1.00  zones[.23.....]  red
+```
+
+**Tardi:** `status`, `arm`, `counts`, `poof` (state and cooldown remaining)
 
 ---
 
@@ -281,9 +543,9 @@ bench work. FastLED scales the frame down rather than let the rail sag.
 ## Known doc discrepancy
 
 The root `README.md` and `docs/current_baseline.md` say normal FIRE pulses are
-500 ms. The code has always used **100 ms** (`NORMAL_FIRE_PULSE_MS`); only the
-all-8 coordinated pulse is 500 ms. The code is what shipped. Left as-is rather
-than silently changing fire timing — but the docs need correcting.
+500 ms. The code has always used **100 ms** (`NORMAL_FIRE_PULSE_MS`). The code
+is what shipped. Left as-is rather than silently changing fire timing — but the
+docs need correcting.
 
 ---
 
@@ -310,9 +572,9 @@ Two numbers worth carrying into the power work:
   and Z7 (0.25, never dark) sit 5-8x the other zones' base brightness. One
   button press adds up to 12 A more.
 
-Neither sketch has been compiled. Eclair pulls in ~3,700 lines of module code
-originally written against the expander API, with call sites renamed by script
-— expect a few errors on the first build.
+Both sketches compile and have been flashed. Eclair pulls in ~3,700 lines of
+module code originally written against the expander API, with call sites
+renamed by script.
 
 ---
 
