@@ -1,0 +1,60 @@
+# =============================================================================
+#  ARDUINO IDE SETTINGS  —  SET THESE BY HAND, EVERY TIME
+# =============================================================================
+#
+#  The IDE does NOT read default_fqbn at the bottom of this file. That line is
+#  for arduino-cli only. Arduino's own docs say the sketch project file "isn't
+#  yet fully supported in the IDE as a way to share settings configured in the
+#  Tools menus".
+#
+#  So this block is a REFERENCE CARD, not automation. Read it, set Tools.
+#
+#    Board            : ESP32S3 Dev Module
+#    USB CDC On Boot  : Enabled            <-- the one everyone forgets
+#    PSRAM            : OPI PSRAM
+#    Flash Size       : 8MB (64Mb)
+#    Upload Speed     : 115200
+#    Port             : Tools > Port > /dev/cu.usbmodem...
+#
+#    Serial Monitor   : 115200
+#
+#  ---------------------------------------------------------------------------
+#  PLUG INTO THE SOCKET MARKED "USB", NOT "UART"
+#  ---------------------------------------------------------------------------
+#  The DevKitC-1 has two USB-C sockets. "UART" goes through the bridge chip on
+#  GPIO43/44. With CDC On Boot enabled, serial only comes out of the native
+#  "USB" one.
+#
+#  A BLANK SERIAL MONITOR IS ALMOST ALWAYS ONE OF THOSE TWO THINGS:
+#    - USB CDC On Boot still Disabled, or
+#    - cable in the UART socket.
+#  Both look exactly like a crashed sketch. Check them before debugging code.
+#
+#  ---------------------------------------------------------------------------
+#  THIS SKETCH: Eclair_LED — the LED board
+#  ---------------------------------------------------------------------------
+#  Libraries : FastLED (3.9 or newer - needs the fl::Channel API)
+#
+#  CHECK build_opt.h APPEARS AS A SECOND TAB when the sketch opens. Without it
+#  FastLED never gets the LCD driver flags and you get RMT instead - which caps
+#  you at 4 lanes and half the sculpture stays dark.
+#
+#  GPIO43 is LED lane Z7 on this board, so UART0 is gone. CDC On Boot is not
+#  optional here.
+#
+#  On boot you should see:
+#      driver : 8/8 on LCD_CLOCKLESS  ->  PASS, all lanes parallel
+#
+#  Anything less than 8/8 means the driver fell back. Check build_opt.h.
+#
+#  Serial commands:
+#      status    driver    heap      buttons   colours
+#      led on|off|solid    led ch 0..7    led red|green|blue
+#      trigger 1..8        trigger all    mood      help
+#
+#  `buttons` samples all 8 inputs for a second - with nothing pressed every pin
+#  should read 0%. Anything above that is noise on the wiring.
+#
+# =============================================================================
+# For arduino-cli only. Ignored by the IDE.
+default_fqbn: esp32:esp32:esp32s3:PSRAM=opi,FlashSize=8M,CDCOnBoot=cdc,UploadSpeed=115200

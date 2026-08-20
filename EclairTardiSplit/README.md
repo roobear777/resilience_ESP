@@ -228,6 +228,11 @@ already active, so a press always gets a response.
 
 ## Arduino IDE
 
+> **[`FLASHING.md`](FLASHING.md) is the one-page card** — settings, what each
+> sketch should print on boot, and a symptom table. That is the file to open on
+> playa; this README is the background.
+
+
 Both: **ESP32S3 Dev Module**, **PSRAM: OPI PSRAM**, **Flash: 8MB**.
 
 **Eclair** additionally:
@@ -308,3 +313,77 @@ Two numbers worth carrying into the power work:
 Neither sketch has been compiled. Eclair pulls in ~3,700 lines of module code
 originally written against the expander API, with call sites renamed by script
 — expect a few errors on the first build.
+
+---
+
+## Fire behaviour (Tardi)
+
+```
+button N            ->  FIRE N, 100 ms, repeating every 1 s while held
+
+all 8 held          ->  t = 0.0 s   FIRE1..FIRE8 all on TOGETHER, FIRE9 on
+                        t = 1.0 s   FIRE1..FIRE8 all off
+                        t = 1.5 s   FIRE9 off, lockout begins
+                        t = 31.5 s  lockout ends
+```
+
+**The zones fire in sync, driven from the poof's clock.** Normally each zone's
+repeat timer runs from the moment *its own* button was pressed, so eight people
+pressing at slightly different times leaves the zones scattered across the
+second. For the payoff they have to land together, so during the poof the state
+machine writes all eight outputs directly and the per-button pulse table is
+bypassed. Measured: every zone starts and stops within the same 5 ms frame.
+
+**The lockout covers all nine outputs.** While it is in effect no button does
+anything — pressing button 3 will not fire zone 3.
+
+Invariant: `BIG_POOF_ZONE_MS <= BIG_POOF_DURATION_MS`, so the zones finish
+first and FIRE9 is alone for the tail of the poof.
+
+The poof is a fixed-length **shot, not a hold**: releasing partway does not cut
+it short, and holding cannot extend it. Re-arming needs the all-8 combo
+released *after* the cooldown has finished, so every poof is a deliberate act.
+
+### What this replaced
+
+Three separate problems:
+
+- **All-8 fired a 500 ms burst on every output**, and the sustained head poof
+  was on **B1 + B8**. All-8 satisfied both conditions, so both ran at once —
+  and both drove FIRE9. They interacted through the shared pulse table and
+  dropped FIRE9 for a frame partway through. FIRE9 is now owned exclusively by
+  one state machine, and `updateFirePulseStates()` deliberately loops
+  `0..NUM_BUTTONS-1` so it can never touch it.
+- **No cooldown existed at all.** Release and re-press re-fired immediately.
+- **The boot interlock never worked.** It checked only
+  `debouncedButtonState[]`, which initialises to `false` and takes
+  `DEBOUNCE_MS` to catch up — so on the first loop iteration every button
+  looked low, all eight were marked seen-low, and the board armed itself before
+  debounce resolved. Holding buttons at power-up armed instantly and then
+  fired: precisely what the interlock exists to prevent. It now requires both
+  raw and debounced low.
+
+B1 + B8 no longer has any special meaning.
+
+### Verification
+
+A host-side harness stubs Arduino, compiles the real `.ino`, and drives it with
+virtual buttons and a virtual clock:
+
+1. boot interlock blocks fire until every input has been seen low
+2. one button drives its own zone, repeating, FIRE9 untouched
+3. all-8 gives a 1.5 s poof — measured 1495 ms
+3b. the poof itself: all 8 zones on for 1000 ms each, every one starting and
+    stopping in the same frame; FIRE9 1495 ms
+4. still held: no refire 10 s into the cooldown
+5. release + re-press mid-cooldown: still locked out
+6. **every** poofer is locked out during the cooldown, not just FIRE9
+7. holding through the cooldown does not auto-fire; release + press does
+8. continuous hold never re-arms
+9. B1+B8 alone does nothing to FIRE9
+10. 7 of 8 buttons is not enough
+11. releasing mid-poof still completes the full 1.5 s
+12. zone poofers resume once the lockout lifts
+13. a single zone still works normally when no poof has happened
+
+All pass. New serial command **`poof`** reports state and cooldown remaining.

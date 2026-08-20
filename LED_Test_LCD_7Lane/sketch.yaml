@@ -1,0 +1,14 @@
+# Arduino IDE 2.x / arduino-cli build profile.
+# Board options pinned to the sketch. Port is NOT pinned - it differs per
+# machine, so pick it from Tools > Port.
+#
+# SUPERSEDED. This is the earlier driver test that used FastLED.addLeds<>,
+# which on this core always routes to RMT - so it appears to prove a 4-channel
+# limit that is really just RMT's hardware ceiling. Use
+# EclairTardiSplit/LCD_Driver_Test instead; it uses the Channel API and reports
+# which driver each lane actually landed on.
+#
+# GPIO43 is a LED lane here, so UART0 is gone: CDCOnBoot=cdc and the "USB"
+# port, not "UART".
+
+default_fqbn: esp32:esp32:esp32s3:PSRAM=opi,FlashSize=8M,CDCOnBoot=cdc,UploadSpeed=115200

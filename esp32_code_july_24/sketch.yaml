@@ -1,0 +1,17 @@
+# Arduino IDE 2.x / arduino-cli build profile.
+# Board options pinned to the sketch. Port is NOT pinned - it differs per
+# machine, so pick it from Tools > Port.
+#
+# SUPERSEDED. This is the single-board July 24 snapshot that both current
+# sketches were split out of, kept for reference. It drives LEDs through the
+# Pixelblaze Output Expander, which is no longer in the signal path.
+# Current firmware is ../EclairTardiSplit/.
+#
+# NOTE: this sketch expects the LED module files from
+# firmware/esp32_controller/ and will not build from this folder alone.
+#
+# CDCOnBoot=cdc for consistency with the other sketches: always plug into the
+# "USB" port, never "UART". (UART0 is actually free in this build, so serial
+# would also work over the UART port with CDCOnBoot=default.)
+
+default_fqbn: esp32:esp32:esp32s3:PSRAM=opi,FlashSize=8M,CDCOnBoot=cdc,UploadSpeed=115200
